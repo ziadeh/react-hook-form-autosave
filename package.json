@@ -1,6 +1,6 @@
 {
   "name": "react-hook-form-autosave",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "Autosave utilities for React Hook Form with debounce, validation, key mapping, and diff handling.",
   "main": "dist/index.cjs",
