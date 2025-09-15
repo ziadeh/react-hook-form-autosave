@@ -1,0 +1,20 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Package managers
+pnpm-lock.yaml
+
+# Configs
+tsconfig.tsbuildinfo
+
+# Tests & coverage
+coverage/
+*.log
+
+# Editor & system
+.vscode/
+.idea/
+.DS_Store

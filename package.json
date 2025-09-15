@@ -1,0 +1,62 @@
+{
+  "name": "react-hook-form-autosave",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Autosave utilities for React Hook Form with debounce, validation, key mapping, and diff handling.",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup src/index.ts --dts --format cjs,esm",
+    "dev": "tsup src/index.ts --dts --format cjs,esm --watch",
+    "prepare": "pnpm build"
+  },
+  "keywords": [
+    "react",
+    "react-hook-form",
+    "autosave",
+    "forms",
+    "debounce",
+    "trpc"
+  ],
+  "author": "Ziad Ziadeh",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ziadeh/react-hook-form-autosave.git"
+  },
+  "homepage": "https://github.com/ziadeh/react-hook-form-autosave#readme",
+  "bugs": {
+    "url": "https://github.com/ziadeh/react-hook-form-autosave/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-hook-form": ">=7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.3",
+    "@types/react": "^19.1.13",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
