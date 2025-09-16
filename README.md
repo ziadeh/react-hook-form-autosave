@@ -1,4 +1,7 @@
 # react-hook-form-autosave
+[![npm version](https://img.shields.io/npm/v/react-hook-form-autosave.svg)](https://www.npmjs.com/package/react-hook-form-autosave)
+[![bundle size](https://img.shields.io/bundlephobia/minzip/react-hook-form-autosave)](https://bundlephobia.com/package/react-hook-form-autosave)
+[![license](https://img.shields.io/github/license/ziadeh/react-hook-form-autosave)](./LICENSE)
 
 Autosave utilities for [React Hook Form](https://react-hook-form.com/) with debounce, validation, key mapping, and diff handling.  
 Perfect for building autosaving forms in React (including **Next.js** apps with **tRPC**).
@@ -28,6 +31,76 @@ npm install react-hook-form-autosave
 # Or with yarn
 yarn add react-hook-form-autosave
 ```
+
+
+---
+
+## API
+
+### Hook
+
+```ts
+const {
+  isSaving,
+  lastError,
+  flush,
+  abort,
+  forceBaselineUpdate
+} = useRhfAutosave(options)
+```
+
+### Options
+
+| Option              | Type / Values                               | Description |
+|---------------------|---------------------------------------------|-------------|
+| `form`              | `UseFormReturn<T>`                          | Required. RHF form instance. |
+| `transport`         | `(payload: any, signal?: AbortSignal) => Promise<{ ok: boolean; error?: Error }>` | Required. Async save function. Receives an `AbortSignal`. |
+| `debounceMs`        | `number`                                    | Debounce interval in ms. |
+| `shouldSave`        | `(ctx: { isDirty: boolean; dirtyFields: any }) => boolean` | Predicate to decide whether to fire save. |
+| `validateBeforeSave`| `"none" | "payload" | "all"`                 | When to validate before save. |
+| `keyMap`            | `Record<string, [apiKey: string, transform?: (val: any) => any]>` | Map form keys to API payload keys. |
+| `mapPayload`        | `(payload: any) => any`                     | Final transform on payload before sending. |
+| `diffMap`           | Object                                      | Special diff handlers for array fields. |
+| `onSaved`           | `(result: { ok: boolean; error?: Error }) => void` | Callback after save completes. |
+
+### Returns
+
+| Return value        | Type          | Description |
+|---------------------|---------------|-------------|
+| `isSaving`          | `boolean`     | True while a save is in flight. |
+| `lastError`         | `Error?`      | Last transport error. |
+| `flush()`           | `() => void`  | Immediately trigger a save (ignore debounce). |
+| `abort()`           | `() => void`  | Cancel current in-flight request. |
+| `forceBaselineUpdate()` | `() => void` | Reset “dirty baseline” to current values. |
+
+---
+
+## AbortController & out-of-order requests
+
+Autosave often needs to cancel or ignore stale requests.
+
+- `abort()` cancels the current in-flight request.  
+- The `transport` function receives an `AbortSignal`. If possible, pass it into `fetch`:
+
+```ts
+transport: async (payload, signal) => {
+  const res = await fetch("/api/update", { method: "PATCH", body: JSON.stringify(payload), signal });
+  return { ok: res.ok };
+}
+```
+
+- Internally, the hook guards against **out-of-order responses** by tracking request IDs. Late responses are ignored.
+
+---
+
+## Recipes
+
+- **Save only valid payloads**:
+  ```ts
+  validateBeforeSave: "payload"
+  ```
+- **Global “Save all” button**: call `flush()`.
+- **Manual reset** after refetch: `form.reset(newDefaults); forceBaselineUpdate();`
 
 ---
 
@@ -97,15 +170,15 @@ Map form field names to API field names (with optional transforms):
 
 ```ts
 keyMap: {
-  jurisdiction_id: ["geo_entity_id", Number],
-  regulatory_type: ["reg_type_id", Number],
+  age: ["age_years", Number],
+  fullName: ["name", (val) => val.trim()],
+  isSubscribed: ["subscribed_flag", (val) => (val ? 1 : 0)]
 }
 ```
 
-Example:
-
-- `jurisdiction_id: 5` → API receives `{ geo_entity_id: 5 }`
-- `regulatory_type: "2"` → API receives `{ reg_type_id: 2 }` (cast to number)
+- `age: "30"` → API receives `{ age_years: 30 }` (cast to number)  
+- `fullName: "  Alice Doe  "` → API receives `{ name: "Alice Doe" }` (trimmed)  
+- `isSubscribed: true` → API receives `{ subscribed_flag: 1 }` (boolean → numeric)
 
 ---
 
@@ -115,19 +188,19 @@ Handle many-to-many fields like `sectors` or `tags` with `onAdd` / `onRemove`:
 
 ```ts
 diffMap: {
-  sectors: {
-    idOf: (x: { id: number }) => x.id,
-    onAdd: async (item) => {
-      await addSector({ regulatoryId: 123, tagId: item.id });
+  tags: {
+    idOf: (tag: { id: number }) => tag.id,
+    onAdd: async (tag) => {
+      await api.addTag({ tagId: tag.id });
     },
-    onRemove: async (item) => {
-      await removeSector({ regulatoryId: 123, tagId: item.id });
+    onRemove: async (tag) => {
+      await api.removeTag({ tagId: tag.id });
     },
   },
 }
 ```
 
-This prevents sending the full array on every change — instead, it triggers specific API calls.
+It triggers specific API calls.
 
 ---
 
@@ -143,34 +216,6 @@ validateBeforeSave: "none"; // skip validation
 
 ---
 
-## 📚 API Reference
-
-### `useRhfAutosave(options)`
-
-Hook to enable autosave for your React Hook Form.
-
-**Options:**
-
-- `form` — RHF form instance (subset of `UseFormReturn`)
-- `transport(payload)` — async save function, must return `{ ok: boolean, error?: Error }`
-- `debounceMs` — debounce delay in ms
-- `shouldSave(ctx)` — predicate to decide when to save
-- `keyMap` — map form fields to API keys
-- `mapPayload(payload)` — custom payload transform
-- `validateBeforeSave` — `"none" | "payload" | "all"`
-- `diffMap` — diff-based handlers for arrays
-- `onSaved(res)` — callback after save success/failure
-
-**Returns:**
-
-- `isSaving: boolean` — true while saving
-- `lastError: Error | null` — last error encountered
-- `flush(): Promise<void>` — force save now
-- `abort(): void` — cancel pending save
-- `forceBaselineUpdate(): void` — reset diff baseline (after loading new data)
-
----
-
 ## 📜 License
 
 MIT © [Ziad Ziadeh](https://github.com/ziadeh)
@@ -180,4 +225,4 @@ MIT © [Ziad Ziadeh](https://github.com/ziadeh)
 ## 🤝 Contributing
 
 Contributions, issues, and feature requests are welcome!  
-Feel free to open an [issue](https://github.com/ziadeh/react-hook-form-autosave.git/issues) or a pull request.
+Feel free to open an [issue](https://github.com/ziadeh/react-hook-form-autosave/issues) or a pull request.
