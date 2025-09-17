@@ -216,6 +216,46 @@ validateBeforeSave: "none"; // skip validation
 
 ---
 
+# 📌 Roadmap for react-hook-form-autosave
+
+## Core improvements
+1. **Status tracking**
+   - Expose `lastSavedAt`, `lastAttemptAt`, `lastErrorAt`, `inFlightSince`, and optionally `serverUpdatedAt`.
+   - Provide a `useAutosaveStatus` hook for read-only consumption.
+
+2. **Nested field support**
+   - Support dot/bracket paths in `keyMap` (e.g. `profile.address.city`).
+   - Allow wildcards for arrays (`items[*].title`, `items[*].tags[*].label`).
+   - Generate minimal payloads with correct parent scaffolding.
+
+3. **Nested diffing**
+   - Add/remove/update detection for arrays-of-objects.
+   - Identity matching via `id` or custom function.
+   - Emit per-item “changed fields” diffs.
+
+4. **Scoped validation**
+   - Run validation only on the affected nested slice (e.g., one array item) instead of the entire form.
+
+5. **Error lifecycle**
+   - Add optional `errorClearMs` configuration to auto-clear `lastError` after N ms (default: off).
+   - Always clear `lastError` when a new save attempt starts or a save succeeds.
+   - Document accessibility considerations and debugging trade-offs.
+
+---
+
+## Advanced / future ideas
+6. **Conflict handling**
+   - Strategies for concurrent edits: API-driven overwrite vs merge.
+
+7. **Persistence**
+   - Optional `persistStatus` flag to store autosave state across reloads or sessions.
+
+8. **DevTools integration**
+   - A browser DevTools panel to visualize autosave lifecycle (in-flight, saved, errors, timestamps).
+
+
+---
+
 ## 📜 License
 
 MIT © [Ziad Ziadeh](https://github.com/ziadeh)
