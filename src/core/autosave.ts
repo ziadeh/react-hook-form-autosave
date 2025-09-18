@@ -16,12 +16,10 @@ export class AutosaveManager {
   private abortController: AbortController | null = null;
   private retryCount = 0;
   private readonly maxRetries = 3;
-  private flushTimeout: ReturnType<typeof setTimeout> | null = null;
-  private lastChangeAt = 0;
 
   constructor(
     private readonly transport: Transport,
-    private readonly debounceMs = 600,
+    private readonly debounceMs = 600, // Keep for backward compatibility but won't use internal debouncing
     private readonly logger?: Logger,
     private readonly timer = { setTimeout, clearTimeout }
   ) {}
@@ -31,14 +29,17 @@ export class AutosaveManager {
       delta,
       currentPending: this.pending,
     });
-    this.pending = { ...this.pending, ...delta };
-    this.lastChangeAt = Date.now();
-    this.scheduleFlush();
+
+    // Merge changes instead of replacing
+    Object.keys(delta).forEach((key) => {
+      this.pending[key] = (delta as any)[key];
+    });
+
+    // FIX: Immediately flush since debouncing is handled at the React level
+    void this.flush();
   }
 
   async flush(): Promise<SaveResult> {
-    this.clearScheduledFlush();
-
     if (this.isEmpty()) {
       return { ok: true };
     }
@@ -90,7 +91,8 @@ export class AutosaveManager {
 
       if (this.shouldRerun) {
         this.shouldRerun = false;
-        this.scheduleFlush();
+        // Immediately try again if there are pending changes
+        void this.flush();
       }
     }
   }
@@ -99,7 +101,6 @@ export class AutosaveManager {
     this.logger?.debug("Aborting autosave");
     this.pending = {};
     this.shouldRerun = false;
-    this.clearScheduledFlush();
     this.abortController?.abort();
   }
 
@@ -118,8 +119,15 @@ export class AutosaveManager {
   }
 
   private handleFailure(payload: SavePayload, error: Error): void {
-    // Re-queue failed payload for retry
-    this.pending = { ...payload, ...this.pending };
+    // On failure, merge failed payload back with any new pending changes
+    const newPending: SavePayload = { ...payload };
+
+    // Merge in any changes that came in during the failed request
+    Object.keys(this.pending).forEach((key) => {
+      newPending[key] = this.pending[key];
+    });
+
+    this.pending = newPending;
     this.retryCount++;
 
     if (this.retryCount <= this.maxRetries) {
@@ -129,48 +137,6 @@ export class AutosaveManager {
       );
     } else {
       this.logger?.error(`Save failed after ${this.maxRetries} retries`, error);
-    }
-  }
-
-  private scheduleFlush(): void {
-    if (this.isEmpty()) {
-      this.clearScheduledFlush();
-      return;
-    }
-
-    if (this.debounceMs <= 0) {
-      this.clearScheduledFlush();
-      void this.flush();
-      return;
-    }
-
-    this.clearScheduledFlush();
-
-    const elapsedSinceChange = Date.now() - this.lastChangeAt;
-    const delay = Math.max(this.debounceMs - elapsedSinceChange, 0);
-
-    const schedule = this.timer.setTimeout as typeof setTimeout;
-    const scheduleWithContext = schedule.bind?.(undefined) ?? schedule;
-
-    this.flushTimeout = scheduleWithContext(() => {
-      this.flushTimeout = null;
-
-      const elapsed = Date.now() - this.lastChangeAt;
-      if (elapsed < this.debounceMs) {
-        this.scheduleFlush();
-        return;
-      }
-
-      void this.flush();
-    }, delay);
-  }
-
-  private clearScheduledFlush(): void {
-    if (this.flushTimeout !== null) {
-      const cancel = this.timer.clearTimeout as typeof clearTimeout;
-      const cancelWithContext = cancel.bind?.(undefined) ?? cancel;
-      cancelWithContext(this.flushTimeout);
-      this.flushTimeout = null;
     }
   }
 }

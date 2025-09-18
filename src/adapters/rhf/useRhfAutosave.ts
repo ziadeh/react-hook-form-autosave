@@ -6,10 +6,7 @@ import type { FieldValues } from "react-hook-form";
 import { AutosaveManager } from "../../core/autosave";
 import { autosaveReducer, initialAutosaveState } from "../../state/reducer";
 import type { Transport, SavePayload, SaveResult } from "../../core/types";
-import type {
-  FormSubset,
-  ValidationStrategy,
-} from "../../strategies/validation/types";
+import type { FormSubset } from "../../strategies/validation/types";
 import {
   createValidationStrategy,
   type ValidationMode,
@@ -21,7 +18,6 @@ import { pickChanged } from "../../utils/pickChanged";
 import { mapKeys, type KeyMap } from "../../utils/mapKeys";
 import { createLogger } from "../../utils/logger";
 import type { AutosaveConfig } from "../../config/schema";
-import { createConfig } from "../../config/schema";
 
 export interface DiffHandler {
   idOf: (item: any) => string | number;
@@ -33,12 +29,12 @@ export interface RhfAutosaveOptions<T extends FieldValues> {
   form: FormSubset<T>;
   transport: Transport;
   config?: Partial<AutosaveConfig>;
-  debounceMs?: number;
   selectPayload?: (values: T, dirtyFields: any) => Partial<T>;
   shouldSave?: (ctx: {
     values: T;
     isValid: boolean;
     isDirty: boolean;
+    dirtyFields: any;
   }) => boolean;
   onSaved?: (result: any, payload: SavePayload) => void;
   keyMap?: KeyMap;
@@ -62,10 +58,11 @@ export function useRhfAutosave<T extends FieldValues>(
     form,
     transport: baseTransport,
     config = {},
-    debounceMs = 600,
     selectPayload = (values, dirty) =>
       pickChanged(values as any, dirty) as Partial<T>,
-    shouldSave = ({ isDirty }) => !!isDirty,
+    shouldSave = ({ dirtyFields }) => {
+      return Object.keys(dirtyFields).length > 0;
+    },
     onSaved,
     keyMap,
     mapPayload,
@@ -74,17 +71,6 @@ export function useRhfAutosave<T extends FieldValues>(
     debug,
   } = options;
 
-  // Create full config with defaults
-  const fullConfig = useMemo(
-    () =>
-      createConfig({
-        debounceMs: debounceMs ?? 600,
-        enableDebugLogs: debug,
-        ...config,
-      }),
-    [config, debug]
-  );
-
   // State management
   const [state, dispatch] = useReducer(autosaveReducer, initialAutosaveState);
 
@@ -92,10 +78,7 @@ export function useRhfAutosave<T extends FieldValues>(
   const validationCache = useMemo(() => new ValidationCache(), []);
   const payloadCache = useMemo(() => new PayloadCache(), []);
   const metrics = useMemo(() => new MetricsCollector(), []);
-  const logger = useMemo(
-    () => createLogger("rhf", fullConfig.enableDebugLogs),
-    [fullConfig.enableDebugLogs]
-  );
+  const logger = useMemo(() => createLogger("rhf", debug), [debug]);
 
   // Validation strategy
   const validationStrategy = useMemo(
@@ -106,6 +89,10 @@ export function useRhfAutosave<T extends FieldValues>(
   // Baseline management for diff operations
   const baselineRef = useRef<Record<string, any> | null>(null);
   const isBaselineInitializedRef = useRef<boolean>(false);
+
+  // Debouncing refs
+  const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastQueuedSigRef = useRef<string>("");
 
   // Form state
   const values = form.watch();
@@ -183,9 +170,11 @@ export function useRhfAutosave<T extends FieldValues>(
           });
         }
 
+        // Remove from payload as it's handled by diff operations
         delete (payload as any)[key];
       }
 
+      // Execute all diff operations
       await Promise.all(operations.map((op) => op()));
     },
     [logger]
@@ -287,14 +276,105 @@ export function useRhfAutosave<T extends FieldValues>(
   const manager = useMemo(() => {
     return new AutosaveManager(
       composedTransport,
-      fullConfig.debounceMs,
+      config.debounceMs || 600,
       logger
     );
-  }, [composedTransport, fullConfig.debounceMs, logger]);
+  }, [composedTransport, config.debounceMs, logger]);
 
-  // Main autosave effect
-  const lastQueuedSigRef = useRef<string>("");
+  // Debounced save function
+  const debouncedSave = useCallback(
+    (values: T, dirtyFields: any) => {
+      // Clear any existing timeout
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
 
+      // Set a new timeout
+      debounceTimeoutRef.current = setTimeout(async () => {
+        try {
+          // Enhanced shouldSave check
+          const shouldTriggerSave = shouldSave({
+            values,
+            isValid,
+            isDirty,
+            dirtyFields,
+          });
+
+          if (!shouldTriggerSave) {
+            logger.debug("Skipping save - shouldSave returned false");
+            return;
+          }
+
+          // Build payload from all dirty fields
+          const basePayload = selectPayload(values, dirtyFields) as SavePayload;
+
+          if (Object.keys(basePayload).length === 0) {
+            logger.debug("Skipping save - empty payload");
+            return;
+          }
+
+          // Validate before queueing if requested
+          if (validateBeforeSave !== "none") {
+            const sig = stableStringify(basePayload as any);
+            let validationResult = validationCache.get(sig);
+
+            if (validationResult === undefined) {
+              logger.debug("Running validation for payload", basePayload);
+              validationResult = await validationStrategy.validate(
+                form,
+                basePayload
+              );
+              validationCache.set(sig, validationResult);
+              metrics.recordCacheMiss();
+            } else {
+              logger.debug("Using cached validation result", {
+                sig,
+                valid: validationResult,
+              });
+              metrics.recordCacheHit();
+            }
+
+            if (!validationResult) {
+              logger.debug("Skipping save - validation failed");
+              return;
+            }
+          }
+
+          // Only queue if payload is meaningfully different
+          const sig = stableStringify(basePayload as any);
+          if (sig === lastQueuedSigRef.current) {
+            logger.debug("Skipping save - duplicate payload", sig);
+            return;
+          }
+          lastQueuedSigRef.current = sig;
+
+          logger.debug("Queueing change after debounce", basePayload);
+          manager.queueChange(basePayload);
+        } catch (error) {
+          logger.error(
+            "Error in debounced save",
+            error instanceof Error ? error : new Error(String(error))
+          );
+        }
+      }, config.debounceMs || 600);
+    },
+    [
+      shouldSave,
+      isValid,
+      isDirty,
+      selectPayload,
+      validateBeforeSave,
+      validationCache,
+      validationStrategy,
+      form,
+      metrics,
+      logger,
+      manager,
+      config.debounceMs,
+    ]
+  );
+
+  // Main autosave effect - Simplified to only trigger debounced save
   useEffect(() => {
     // Skip if form is currently validating
     if (isValidating) {
@@ -308,99 +388,43 @@ export function useRhfAutosave<T extends FieldValues>(
       return;
     }
 
-    (async () => {
-      try {
-        // Check if we should save at all
-        if (!shouldSave({ values, isValid, isDirty })) {
-          logger.debug("Skipping save - shouldSave returned false", {
-            values,
-            isValid,
-            isDirty,
-          });
-          return;
-        }
+    // Detect if there are any changes worth saving
+    const hasChanges = Object.keys(dirtyFields).length > 0 || isDirty;
 
-        // Build base payload from current values + dirty field map
-        const basePayload = selectPayload(values, dirtyFields) as SavePayload;
-        if (Object.keys(basePayload).length === 0) {
-          logger.debug("Skipping save - empty payload");
-          return;
-        }
+    if (!hasChanges) {
+      logger.debug("Skipping save - no changes detected");
+      return;
+    }
 
-        // Validate before queueing if requested
-        if (validateBeforeSave !== "none") {
-          const sig = stableStringify(basePayload as any);
-          let validationResult = validationCache.get(sig);
-
-          if (validationResult === undefined) {
-            logger.debug("Running validation for payload", basePayload);
-            validationResult = await validationStrategy.validate(
-              form,
-              basePayload
-            );
-            validationCache.set(sig, validationResult);
-            metrics.recordCacheMiss();
-          } else {
-            logger.debug("Using cached validation result", {
-              sig,
-              valid: validationResult,
-            });
-            metrics.recordCacheHit();
-          }
-
-          if (!validationResult) {
-            logger.debug("Skipping save - validation failed");
-            return;
-          }
-        }
-
-        // Prevent duplicate payloads
-        const sig = stableStringify(basePayload as any);
-        if (sig === lastQueuedSigRef.current) {
-          logger.debug("Skipping save - duplicate payload", sig);
-          return;
-        }
-        lastQueuedSigRef.current = sig;
-
-        logger.debug("Queueing change", basePayload);
-        manager.queueChange(basePayload);
-      } catch (error) {
-        logger.error(
-          "Error in autosave effect",
-          error instanceof Error ? error : new Error(String(error))
-        );
-      }
-    })();
+    // Trigger debounced save
+    debouncedSave(values, dirtyFields);
   }, [
     values,
-    isDirty,
-    isValid,
-    isValidating,
     dirtyFields,
-    selectPayload,
-    shouldSave,
-    validateBeforeSave,
-    form,
-    validationCache,
-    validationStrategy,
-    metrics,
+    isDirty,
+    isValidating,
+    debouncedSave,
+    diffMap,
     logger,
-    manager,
   ]);
 
   // Clear caches when form becomes clean
   useEffect(() => {
-    if (Object.keys(dirtyFields).length === 0) {
+    if (Object.keys(dirtyFields).length === 0 && !isDirty) {
       validationCache.clear();
       lastQueuedSigRef.current = "";
       logger.debug("Cleared validation cache - form is clean");
     }
-  }, [dirtyFields, validationCache, logger]);
+  }, [dirtyFields, isDirty, validationCache, logger]);
 
   // Cleanup effect
   useEffect(() => {
     return () => {
       logger.debug("Cleaning up autosave hook");
+      // Clear debounce timeout
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
       manager.abort();
     };
   }, [manager, logger]);
@@ -411,16 +435,25 @@ export function useRhfAutosave<T extends FieldValues>(
     isSaving: state.isSaving,
     lastError: state.lastError,
     metrics: state.metrics,
-    config: fullConfig,
 
     // Actions
     flush: useCallback(() => {
       logger.debug("Manual flush requested");
+      // Clear debounce and immediately flush
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+        debounceTimeoutRef.current = null;
+      }
       return manager.flush();
     }, [manager, logger]),
 
     abort: useCallback(() => {
       logger.debug("Manual abort requested");
+      // Clear debounce timeout
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+        debounceTimeoutRef.current = null;
+      }
       manager.abort();
       dispatch({ type: "ABORT" });
     }, [manager, logger]),
@@ -459,5 +492,17 @@ export function useRhfAutosave<T extends FieldValues>(
     ),
 
     isEmpty: useCallback(() => manager.isEmpty(), [manager]),
+
+    // Force save (bypass debounce)
+    forceSave: useCallback(() => {
+      logger.debug("Force save requested");
+      // Clear debounce and trigger immediate save
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+        debounceTimeoutRef.current = null;
+      }
+      // Trigger immediate save with current form state
+      debouncedSave.call(null, values, dirtyFields);
+    }, [logger, values, dirtyFields, debouncedSave]),
   };
 }

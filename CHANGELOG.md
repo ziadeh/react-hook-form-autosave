@@ -2,6 +2,12 @@
 
 All notable changes to **react-hook-form-autosave** will be documented here.
 
+## [2.0.1] - 2025-09-18
+
+### Fixed
+- **autosave**: Fixed multiple network requests being sent during typing
+  - Now batches all keystrokes into single request after debounce period
+
 ## [2.0.0] - 2025-09-18
 
 ### 🚀 Major Release - Complete Architecture Overhaul
