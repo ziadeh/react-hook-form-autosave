@@ -4,53 +4,43 @@
 [![bundle size](https://img.shields.io/bundlephobia/minzip/react-hook-form-autosave)](https://bundlephobia.com/package/react-hook-form-autosave)
 [![license](https://img.shields.io/github/license/ziadeh/react-hook-form-autosave)](./LICENSE)
 
-Advanced autosave utilities for [React Hook Form](https://react-hook-form.com/) with comprehensive features for building production-ready autosaving forms.
+**Effortless autosave for React Hook Form. Save user changes automatically as they type, with smart debouncing and validation.**
 
-**Perfect for building autosaving forms in React, Next.js apps with tRPC, and complex enterprise applications.**
+```tsx
+const { isSaving } = useRhfAutosave({
+  form,
+  transport: (data) => fetch('/api/save', { method: 'POST', body: JSON.stringify(data) })
+});
+```
+
+✅ **Zero configuration** - Works out of the box  
+✅ **Smart debouncing** - Optimized API calls  
+✅ **Validation aware** - Only saves valid data  
+✅ **Production ready** - Error handling, retries, metrics  
 
 ---
 
-## ✨ Features
+## Table of Contents
 
-### 🚀 **Core Autosave**
-- 🔄 **Automatic saving** as users type with intelligent debouncing
-- ⏱️ **Configurable debounce** timing to optimize API calls
-- 🎯 **Smart payload selection** - only save changed fields
-- ✅ **Validation-aware** - only save when fields are valid
-- 🚫 **Abort support** - cancel in-flight requests when needed
-
-### 🏗️ **Advanced Architecture** 
-- 🧩 **Modular design** with pluggable validation and transport strategies
-- 📊 **Built-in metrics** collection for monitoring and debugging
-- 🗄️ **Intelligent caching** system with TTL and size limits
-- 🔄 **Retry mechanisms** with exponential backoff
-- 🎭 **Multiple transport composition** (sequential or parallel)
-
-### 🛠️ **Data Transformation**
-- 🗝️ **Key mapping** - transform form field names to API field names
-- 🔄 **Value transformations** - convert data types and formats
-- ➕➖ **Diff-based operations** - handle array add/remove operations
-- 🌳 **Nested data support** with deep change detection
-
-### 🧪 **Developer Experience**
-- 🐛 **Comprehensive debugging** with structured logging
-- 📈 **Performance monitoring** with detailed metrics
-- 🧪 **Testing utilities** and mocks included
-- 📖 **TypeScript-first** with full type safety
-- 🔍 **Runtime introspection** of configuration and state
+- [Installation](#-installation)
+- [Quick Start](#-quick-start)
+- [Why Choose This?](#-why-choose-this)
+- [Basic Examples](#-basic-examples)
+- [Common Patterns](#-common-patterns)
+- [Advanced Features](#-advanced-features)
+- [API Reference](#-api-reference)
+- [Framework Integration](#-framework-integration)
+- [Best Practices](#-best-practices)
 
 ---
 
 ## 📦 Installation
 
 ```bash
-# With pnpm (recommended)
-pnpm add react-hook-form-autosave
-
-# With npm
 npm install react-hook-form-autosave
-
-# With yarn
+# or
+pnpm add react-hook-form-autosave
+# or  
 yarn add react-hook-form-autosave
 ```
 
@@ -58,29 +48,26 @@ yarn add react-hook-form-autosave
 
 ## 🚀 Quick Start
 
+**Step 1:** Add the hook to your form
+
 ```tsx
 import { useForm } from "react-hook-form";
 import { useRhfAutosave } from "react-hook-form-autosave";
 
 function MyForm() {
   const form = useForm({
-    defaultValues: { name: "", email: "" },
-    mode: "onChange",
+    defaultValues: { name: "", email: "" }
   });
 
-  const { isSaving, lastError } = useRhfAutosave({
+  const { isSaving } = useRhfAutosave({
     form,
-    transport: async (payload) => {
+    transport: async (data) => {
       const response = await fetch("/api/save", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(data),
       });
       return { ok: response.ok };
-    },
-    config: {
-      debounceMs: 600,
-      enableDebugLogs: true,
     },
   });
 
@@ -88,14 +75,325 @@ function MyForm() {
     <form>
       <input {...form.register("name")} placeholder="Name" />
       <input {...form.register("email")} placeholder="Email" />
+      <div>{isSaving ? "💾 Saving..." : "✅ Saved"}</div>
+    </form>
+  );
+}
+```
+
+**That's it!** Your form now autosaves as users type.
+
+---
+
+## 💡 Why Choose This?
+
+### The Problem
+- Users lose work when browsers crash or accidentally navigate away
+- Manual save buttons are easily forgotten  
+- Building autosave from scratch is complex (debouncing, validation, error handling, etc.)
+
+### The Solution
+```tsx
+// Without this library (complex)
+const [saving, setSaving] = useState(false);
+const debouncedSave = useMemo(() => debounce(async (data) => {
+  setSaving(true);
+  try {
+    if (form.formState.isValid) {
+      await saveData(data);
+    }
+  } catch (error) {
+    // handle error...
+  } finally {
+    setSaving(false);
+  }
+}, 600), []);
+
+useEffect(() => {
+  if (form.formState.isDirty) {
+    debouncedSave(form.getValues());
+  }
+}, [form.watch()]);
+
+// With this library (simple)
+const { isSaving } = useRhfAutosave({ form, transport: saveData });
+```
+
+### Key Benefits
+- **🔄 Smart debouncing** - Reduces API calls while maintaining responsiveness
+- **✅ Validation integration** - Only saves when data is valid
+- **🚫 Automatic abort** - Cancels outdated requests
+- **🔁 Built-in retry** - Handles network failures gracefully  
+- **📊 Performance metrics** - Monitor save success rates and timing
+- **🧪 TypeScript first** - Full type safety out of the box
+
+---
+
+## 🎯 Basic Examples
+
+### Simple Status Display
+
+```tsx
+function MyForm() {
+  const form = useForm({ defaultValues: { title: "" } });
+  
+  const { isSaving, lastError, hasPendingChanges } = useRhfAutosave({
+    form,
+    transport: async (data) => {
+      await fetch("/api/save", { method: "POST", body: JSON.stringify(data) });
+      return { ok: true };
+    },
+  });
+
+  return (
+    <form>
+      <input {...form.register("title")} />
       
+      {/* Status indicator */}
       <div>
-        Status: {isSaving ? "💾 Saving..." : "✅ Saved"}
-        {lastError && <span style={{ color: "red" }}>❌ {lastError.message}</span>}
+        {isSaving && "💾 Saving..."}
+        {!isSaving && hasPendingChanges && "✏️ Editing..."}
+        {!isSaving && !hasPendingChanges && "✅ Saved"}
+        {lastError && `❌ Error: ${lastError.message}`}
       </div>
     </form>
   );
 }
+```
+
+### Custom Debounce Timing
+
+```tsx
+const { isSaving } = useRhfAutosave({
+  form,
+  transport,
+  config: {
+    debounceMs: 1000, // Wait 1 second after user stops typing
+    enableDebugLogs: true, // See what's happening in console
+  }
+});
+```
+
+### Only Save Valid Data
+
+```tsx
+const { isSaving } = useRhfAutosave({
+  form,
+  transport,
+  shouldSave: ({ isDirty, isValid }) => isDirty && isValid,
+  validateBeforeSave: "payload", // Only validate changed fields
+});
+```
+
+---
+
+## 🔧 Common Patterns
+
+### Manual Save Button
+
+Sometimes you want both autosave AND a manual save button:
+
+```tsx
+function MyForm() {
+  const form = useForm();
+  const { isSaving, flush, hasPendingChanges } = useRhfAutosave({
+    form,
+    transport,
+    config: { debounceMs: 2000 } // Auto-save after 2 seconds of inactivity
+  });
+
+  const handleManualSave = async () => {
+    const result = await flush(); // Save immediately
+    if (result.ok) {
+      toast.success("Saved!");
+    }
+  };
+
+  return (
+    <form>
+      <input {...form.register("title")} />
+      
+      <button 
+        type="button" 
+        onClick={handleManualSave}
+        disabled={!hasPendingChanges || isSaving}
+      >
+        {isSaving ? "Saving..." : "Save Now"}
+      </button>
+    </form>
+  );
+}
+```
+
+### Form Submission Integration
+
+Ensure all changes are saved before final submission:
+
+```tsx
+function MyForm() {
+  const form = useForm();
+  const { flush, hasPendingChanges } = useRhfAutosave({
+    form,
+    transport
+  });
+
+  const onSubmit = async (data) => {
+    // Save any pending autosave changes first
+    if (hasPendingChanges) {
+      await flush();
+    }
+    
+    // Then do final submission
+    await submitForm(data);
+  };
+
+  return (
+    <form onSubmit={form.handleSubmit(onSubmit)}>
+      <input {...form.register("title")} />
+      <button type="submit">Submit</button>
+    </form>
+  );
+}
+```
+
+### Error Handling
+
+```tsx
+const { isSaving, lastError } = useRhfAutosave({
+  form,
+  transport,
+  onSaved: (result, payload) => {
+    if (result.ok) {
+      toast.success("Changes saved!");
+    } else {
+      toast.error(`Save failed: ${result.error.message}`);
+      // Log for debugging
+      console.error("Autosave failed:", result.error, payload);
+    }
+  },
+});
+
+// Show persistent error state
+if (lastError) {
+  return <div className="error">Failed to save: {lastError.message}</div>;
+}
+```
+
+---
+
+## 🚀 Advanced Features
+
+### Field Name Mapping
+
+Transform form field names to match your API:
+
+```tsx
+const { isSaving } = useRhfAutosave({
+  form,
+  transport,
+  keyMap: {
+    // Simple rename
+    fullName: "name",
+    
+    // Rename + transform value
+    age: ["age_years", Number],
+    
+    // Complex transformation  
+    isActive: ["status", (value) => value ? "active" : "inactive"],
+  },
+});
+
+// Form has: { fullName: "John", age: "25", isActive: true }
+// API gets: { name: "John", age_years: 25, status: "active" }
+```
+
+### Array Operations
+
+Handle many-to-many relationships with targeted API operations:
+
+```tsx
+const { isSaving } = useRhfAutosave({
+  form,
+  transport: async (payload) => {
+    // Main entity update (tags/categories excluded automatically)
+    return await api.updatePost(payload);
+  },
+  diffMap: {
+    tags: {
+      idOf: (tag) => tag.id,
+      onAdd: async (tag) => {
+        // Called for each newly added tag
+        await api.addTagToPost(tag.id, postId);
+      },
+      onRemove: async (tag) => {
+        // Called for each removed tag  
+        await api.removeTagFromPost(tag.id, postId);
+      },
+    },
+  },
+});
+```
+
+### Multiple Transport Operations
+
+Compose multiple save operations:
+
+```tsx
+import { composeTransports, parallelTransports } from "react-hook-form-autosave";
+
+// Sequential operations
+const transport = composeTransports(
+  async (data) => {
+    await validateData(data);
+    return { ok: true };
+  },
+  async (data) => {
+    await saveToDatabase(data);
+    return { ok: true };
+  },
+  async (data) => {
+    await updateSearchIndex(data);
+    return { ok: true };
+  }
+);
+
+// Or parallel operations
+const parallelTransport = parallelTransports(
+  async (data) => saveToDatabase(data),
+  async (data) => saveToCache(data),  
+  async (data) => logAnalytics(data)
+);
+
+const { isSaving } = useRhfAutosave({
+  form,
+  transport, // or parallelTransport
+});
+```
+
+### Performance Monitoring
+
+```tsx
+const { getMetrics } = useRhfAutosave({
+  form,
+  transport,
+  config: { 
+    enableMetrics: true,
+    enableDebugLogs: process.env.NODE_ENV === "development"
+  }
+});
+
+// Monitor performance
+useEffect(() => {
+  const interval = setInterval(() => {
+    const metrics = getMetrics();
+    console.log({
+      successRate: (metrics.successfulSaves / metrics.totalSaves * 100).toFixed(1) + '%',
+      avgSaveTime: metrics.averageSaveTime + 'ms',
+      totalSaves: metrics.totalSaves
+    });
+  }, 30000);
+  return () => clearInterval(interval);
+}, []);
 ```
 
 ---
@@ -105,37 +403,71 @@ function MyForm() {
 ### Hook Signature
 
 ```tsx
-const autosave = useRhfAutosave<FormData>(options)
+const result = useRhfAutosave<FormData>(options)
 ```
 
-### Options
+### Core Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `form` | `UseFormReturn<T>` | **Required** | React Hook Form instance |
-| `transport` | `Transport` | **Required** | Async function to save data |
-| `config` | `Partial<AutosaveConfig>` | `{}` | Configuration object |
-| `shouldSave` | `(ctx) => boolean` | `({ isDirty }) => isDirty` | Predicate for when to save |
-| `selectPayload` | `(values, dirtyFields) => Partial<T>` | `pickChanged` | Extract payload from form |
-| `keyMap` | `KeyMap` | `undefined` | Map form keys to API keys |
-| `mapPayload` | `(payload) => any` | `undefined` | Final payload transformation |
-| `validateBeforeSave` | `"none" \| "payload" \| "all"` | `"payload"` | Validation strategy |
-| `diffMap` | `Record<string, DiffHandler>` | `undefined` | Array diff operations |
-| `onSaved` | `(result, payload) => void` | `undefined` | Success/failure callback |
-| `debug` | `boolean` | `false` | Enable debug logging |
+| Option | Type | Required | Description |
+|--------|------|----------|-------------|
+| `form` | `UseFormReturn<T>` | ✅ | React Hook Form instance |
+| `transport` | `(data) => Promise<{ok: boolean}>` | ✅ | Function to save data |
 
-### Configuration Object
+### Configuration Options
 
 ```tsx
 interface AutosaveConfig {
-  debounceMs: number;        // Debounce delay (default: 600)
-  maxRetries: number;        // Retry attempts (default: 3)
-  enableMetrics: boolean;    // Collect metrics (default: false)
-  enableCache: boolean;      // Enable caching (default: true)
-  cacheSize: number;         // Cache size limit (default: 100)
-  cacheTtlMs: number;        // Cache TTL (default: 5min)
-  enableDebugLogs: boolean;  // Debug logging (default: false)
+  debounceMs?: number;        // Delay before saving (default: 600)
+  maxRetries?: number;        // Retry attempts (default: 3)
+  enableMetrics?: boolean;    // Collect performance data (default: false)
+  enableCache?: boolean;      // Cache validation results (default: true)
+  enableDebugLogs?: boolean;  // Console logging (default: false)
 }
+
+const { isSaving } = useRhfAutosave({
+  form,
+  transport,
+  config: {
+    debounceMs: 1000,
+    enableDebugLogs: true
+  }
+});
+```
+
+### Advanced Options
+
+```tsx
+const { isSaving } = useRhfAutosave({
+  form,
+  transport,
+  
+  // When to save
+  shouldSave: ({ isDirty, isValid, values }) => isDirty && isValid,
+  
+  // What to save  
+  selectPayload: (values, dirtyFields) => pickChanged(values, dirtyFields),
+  
+  // Transform data
+  keyMap: { fullName: "name" },
+  mapPayload: (payload) => ({ ...payload, updatedAt: new Date() }),
+  
+  // Validation
+  validateBeforeSave: "payload", // "none" | "payload" | "all"
+  
+  // Array operations
+  diffMap: {
+    tags: {
+      idOf: (tag) => tag.id,
+      onAdd: async (tag) => { /* add logic */ },
+      onRemove: async (tag) => { /* remove logic */ }
+    }
+  },
+  
+  // Callbacks
+  onSaved: (result, payload) => {
+    if (result.ok) console.log("Saved:", payload);
+  },
+});
 ```
 
 ### Return Value
@@ -143,267 +475,121 @@ interface AutosaveConfig {
 ```tsx
 interface AutosaveResult {
   // Status
-  isSaving: boolean;
-  lastError: Error | null;
-  metrics: AutosaveMetrics;
-  config: AutosaveConfig;
-
+  isSaving: boolean;                    // Currently saving
+  lastError: Error | null;              // Last error that occurred
+  hasPendingChanges: boolean;           // Unsaved changes exist
+  
   // Actions
-  flush: () => Promise<SaveResult>;
-  abort: () => void;
-  forceBaselineUpdate: () => void;
-
-  // Introspection
-  getBaseline: () => Record<string, any> | null;
-  isBaselineInitialized: () => boolean;
+  flush: () => Promise<SaveResult>;     // Save immediately
+  abort: () => void;                    // Cancel pending saves
+  forceSave: () => Promise<SaveResult>; // Save even without changes
+  
+  // Metrics & Debug
   getMetrics: () => AutosaveMetrics;
-  getCacheStats: () => CacheStats;
-  getPendingChanges: () => SavePayload;
-  isEmpty: () => boolean;
+  getPendingChanges: () => any;         // See what will be saved
+  isEmpty: () => boolean;               // No pending changes
 }
 ```
 
----
+### Transport Function
 
-## 🎯 Advanced Examples
-
-### 🔑 Key Mapping & Transformations
-
-Transform form field names and values before sending to your API:
+Your transport function should return a result object:
 
 ```tsx
-const { isSaving } = useRhfAutosave({
-  form,
-  transport,
-  keyMap: {
-    // Simple field name mapping
-    fullName: "name",
-    
-    // With value transformation
-    age: ["age_years", Number],
-    
-    // Complex transformation
-    isSubscribed: ["subscription_status", (value) => value ? "active" : "inactive"],
-  },
-  // Additional payload transformation
-  mapPayload: (payload) => ({
-    ...payload,
-    updated_at: new Date().toISOString(),
-    version: "2.0",
-  }),
-});
-```
-
-### ➕➖ Array Diff Operations
-
-Handle many-to-many relationships with targeted API calls:
-
-```tsx
-const { isSaving } = useRhfAutosave({
-  form,
-  transport,
-  diffMap: {
-    tags: {
-      idOf: (tag) => tag.id,
-      onAdd: async (tag) => {
-        await api.addTag({ tagId: tag.id, entityId: currentId });
-      },
-      onRemove: async (tag) => {
-        await api.removeTag({ tagId: tag.id, entityId: currentId });
-      },
-    },
-    categories: {
-      idOf: (cat) => cat.slug,
-      onAdd: async (category) => {
-        await api.assignCategory(category.slug);
-      },
-      onRemove: async (category) => {
-        await api.unassignCategory(category.slug);
-      },
-    },
-  },
-});
-```
-
-### 🎛️ Advanced Configuration
-
-```tsx
-const { isSaving, config, getMetrics } = useRhfAutosave({
-  form,
-  transport,
-  config: {
-    debounceMs: 1000,
-    maxRetries: 5,
-    enableMetrics: true,
-    enableCache: true,
-    cacheSize: 200,
-    cacheTtlMs: 10 * 60 * 1000, // 10 minutes
-    enableDebugLogs: process.env.NODE_ENV === "development",
-  },
-  shouldSave: ({ isDirty, isValid, values }) => {
-    // Custom save logic
-    return isDirty && isValid && values.title?.length > 3;
-  },
-  validateBeforeSave: "payload", // Only validate changed fields
-  onSaved: (result, payload) => {
-    if (result.ok) {
-      toast.success("Changes saved!");
-      analytics.track("form_autosaved", { fields: Object.keys(payload) });
-    } else {
-      toast.error(`Save failed: ${result.error.message}`);
-    }
-  },
-});
-
-// Monitor performance
-useEffect(() => {
-  const metrics = getMetrics();
-  console.log(`Success rate: ${metrics.successfulSaves / metrics.totalSaves * 100}%`);
-}, [getMetrics]);
-```
-
-### 🔗 Transport Composition
-
-Combine multiple save operations:
-
-```tsx
-import { composeTransports, parallelTransports, withRetry } from "react-hook-form-autosave";
-
-// Sequential operations
-const sequentialTransport = composeTransports(
-  async (payload) => {
-    await validatePayload(payload);
+// Simple success/failure
+const transport = async (data) => {
+  try {
+    await fetch('/api/save', { method: 'POST', body: JSON.stringify(data) });
     return { ok: true };
-  },
-  async (payload) => {
-    await saveToDatabase(payload);
-    return { ok: true };
-  },
-  async (payload) => {
-    await updateSearchIndex(payload);
-    return { ok: true };
+  } catch (error) {
+    return { ok: false, error };
   }
-);
+};
 
-// Parallel operations with retry
-const parallelTransport = withRetry(
-  parallelTransports(
-    async (payload) => saveToDatabase(payload),
-    async (payload) => saveToCache(payload),
-    async (payload) => logAnalytics(payload)
-  ),
-  { maxRetries: 3, baseDelayMs: 1000 }
-);
-
-const { isSaving } = useRhfAutosave({
-  form,
-  transport: sequentialTransport, // or parallelTransport
-});
-```
-
-### 🧪 Testing
-
-```tsx
-import { createMockTransport, createMockForm, MockTimer } from "react-hook-form-autosave";
-
-describe("Autosave", () => {
-  it("should debounce saves", async () => {
-    const mockTimer = new MockTimer();
-    const transport = createMockTransport([{ ok: true }]);
-    const form = createMockForm({
-      formState: { isDirty: true, isValid: true }
-    });
-
-    const { result } = renderHook(() =>
-      useRhfAutosave({
-        form,
-        transport,
-        config: { debounceMs: 500 }
-      })
-    );
-
-    // Simulate rapid changes
-    act(() => {
-      form.setValue("name", "John");
-      form.setValue("name", "John Doe");
-    });
-
-    // Fast-forward time
-    act(() => {
-      mockTimer.tick(500);
-    });
-
-    expect(transport.getCalls()).toHaveLength(1);
-  });
-});
+// With additional data
+const transport = async (data) => {
+  const response = await api.save(data);
+  return { 
+    ok: response.success, 
+    error: response.error,
+    data: response.savedData 
+  };
+};
 ```
 
 ---
 
-## 🔧 Integration Guides
+## 🔗 Framework Integration
 
-### 📡 tRPC Integration
+### Next.js + tRPC
 
 ```tsx
-import { trpcTransport } from "react-hook-form-autosave";
+import { api } from "~/utils/api";
 
-function MyComponent() {
+function MyForm() {
+  const form = useForm();
   const updateMutation = api.posts.update.useMutation();
   
   const { isSaving } = useRhfAutosave({
     form,
-    transport: trpcTransport(updateMutation),
-    config: { debounceMs: 800 }
+    transport: async (data) => {
+      try {
+        await updateMutation.mutateAsync({ id: postId, ...data });
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error };
+      }
+    },
   });
+
+  // ... rest of component
 }
 ```
 
----
-
-## 📊 Monitoring & Debugging
-
-### 📈 Metrics Collection
+### Remix
 
 ```tsx
-const { getMetrics, getCacheStats } = useRhfAutosave({
-  form,
-  transport,
-  config: { enableMetrics: true }
-});
+import { useFetcher } from "@remix-run/react";
 
-// Monitor performance
-useEffect(() => {
-  const interval = setInterval(() => {
-    const metrics = getMetrics();
-    const cacheStats = getCacheStats();
-    
-    console.log({
-      totalSaves: metrics.totalSaves,
-      successRate: metrics.successfulSaves / metrics.totalSaves,
-      averageSaveTime: metrics.averageSaveTime,
-      cacheHitRate: cacheStats.validationCacheSize,
-    });
-  }, 30000);
+function MyForm() {
+  const form = useForm();
+  const fetcher = useFetcher();
+  
+  const { isSaving } = useRhfAutosave({
+    form,
+    transport: async (data) => {
+      fetcher.submit(data, { method: "POST", encType: "application/json" });
+      return { ok: true }; // Remix handles the actual request
+    },
+  });
 
-  return () => clearInterval(interval);
-}, [getMetrics, getCacheStats]);
+  // ... rest of component  
+}
 ```
 
-### 🐛 Debug Mode
+### React Query
 
 ```tsx
-const { config, getPendingChanges, isEmpty } = useRhfAutosave({
-  form,
-  transport,
-  config: { enableDebugLogs: true }, // Enables detailed console logging
-});
+import { useMutation } from "@tanstack/react-query";
 
-// Runtime debugging
-const debugInfo = {
-  config,
-  hasPendingChanges: !isEmpty(),
-  pendingChanges: getPendingChanges(),
-};
+function MyForm() {
+  const form = useForm();
+  const saveMutation = useMutation({
+    mutationFn: (data) => fetch('/api/save', { method: 'POST', body: JSON.stringify(data) })
+  });
+  
+  const { isSaving } = useRhfAutosave({
+    form,
+    transport: async (data) => {
+      try {
+        await saveMutation.mutateAsync(data);
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error };
+      }
+    },
+  });
+}
 ```
 
 ---
@@ -413,93 +599,176 @@ const debugInfo = {
 ### ⚡ Performance
 
 ```tsx
-// ✅ Good: Reasonable debounce for user experience
-config: { debounceMs: 600 }
+// ✅ Good: Reasonable debounce timing
+config: { debounceMs: 600 } // 600ms is a good balance
 
-// ❌ Bad: Too aggressive, may impact UX
+// ❌ Bad: Too fast, hammers your API
 config: { debounceMs: 100 }
 
-// ✅ Good: Enable caching for repeated validations
-config: { enableCache: true, cacheSize: 100 }
+// ❌ Bad: Too slow, users lose more work on crash  
+config: { debounceMs: 5000 }
 
-// ✅ Good: Only save valid, dirty forms
+// ✅ Good: Only save when it makes sense
 shouldSave: ({ isDirty, isValid }) => isDirty && isValid
+
+// ✅ Good: Enable caching for better performance  
+config: { enableCache: true }
 ```
 
 ### 🔒 Error Handling
 
 ```tsx
-const { lastError, isSaving } = useRhfAutosave({
+// ✅ Good: Handle errors gracefully
+const transport = async (data) => {
+  try {
+    const response = await fetch('/api/save', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Save failed: ${response.status}`);
+    }
+    
+    return { ok: true };
+  } catch (error) {
+    // Log for debugging but don't throw
+    console.error('Autosave transport error:', error);
+    return { ok: false, error };
+  }
+};
+
+// ✅ Good: Show user-friendly error messages
+const { lastError } = useRhfAutosave({
   form,
   transport,
-  onSaved: (result, payload) => {
+  onSaved: (result) => {
     if (!result.ok) {
-      // Log error for debugging
-      console.error("Autosave failed:", result.error, { payload });
-      
-      // Show user-friendly message
-      toast.error("Failed to save changes. Please try again.");
-      
-      // Optional: Send to error tracking
-      errorTracker.captureException(result.error, {
-        context: "autosave",
-        payload,
-      });
+      toast.error('Failed to save changes. They will retry automatically.');
     }
-  },
+  }
 });
-
-// Display error state
-if (lastError) {
-  return <ErrorBoundary error={lastError} />;
-}
 ```
 
-### 🧹 Cleanup
+### 🧹 Memory Management
 
 ```tsx
+// ✅ Good: The hook automatically cleans up
+// No manual cleanup needed in most cases
+
+// ✅ Good: For complex cases, you can force cleanup
+const { abort } = useRhfAutosave({ form, transport });
+
 useEffect(() => {
   return () => {
-    // Autosave automatically cleans up, but you can force it
+    // Only needed if you're unmounting while saves are pending
     abort();
   };
 }, [abort]);
 ```
 
+### 🧪 Testing
+
+```tsx
+import { act, renderHook } from '@testing-library/react';
+import { useRhfAutosave } from 'react-hook-form-autosave';
+
+test('should autosave after debounce period', async () => {
+  const mockTransport = jest.fn(() => Promise.resolve({ ok: true }));
+  const mockForm = {
+    formState: { isDirty: true, isValid: true },
+    getValues: () => ({ name: 'John' }),
+    watch: () => ({ name: 'John' })
+  };
+
+  const { result } = renderHook(() =>
+    useRhfAutosave({
+      form: mockForm,
+      transport: mockTransport,
+      config: { debounceMs: 100 }
+    })
+  );
+
+  // Wait for debounce
+  await act(async () => {
+    await new Promise(resolve => setTimeout(resolve, 150));
+  });
+
+  expect(mockTransport).toHaveBeenCalledWith({ name: 'John' });
+});
+```
+
 ---
 
-## 🗺️ Roadmap
+## 🙋‍♀️ FAQ
 
-### ✅ Completed Features
+<details>
+<summary><strong>How do I prevent saving invalid data?</strong></summary>
 
-- ✅ **Status tracking** (`lastSavedAt`, `lastErrorAt`, metrics)
-- ✅ **Error lifecycle** (automatic error clearing)
-- ✅ **Advanced caching** (validation and payload caching)
-- ✅ **Enhanced transport system** (composition, retry, abort support)
-- ✅ **Comprehensive testing utilities**
-- ✅ **Production-ready architecture**
+```tsx
+const { isSaving } = useRhfAutosave({
+  form,
+  transport,
+  shouldSave: ({ isDirty, isValid }) => isDirty && isValid,
+  validateBeforeSave: "payload" // Only validate changed fields
+});
+```
+</details>
 
-### 🚧 In Progress
+<details>
+<summary><strong>Can I save only specific fields?</strong></summary>
 
-- 🔄 **Nested field support** (dot notation paths, wildcards)
-- 🔄 **Enhanced diffing** (nested object diff operations)
-- 🔄 **Scoped validation** (validate specific nested slices)
+```tsx
+const { isSaving } = useRhfAutosave({
+  form,
+  transport,
+  selectPayload: (values, dirtyFields) => {
+    // Only save name and email fields
+    return { name: values.name, email: values.email };
+  }
+});
+```
+</details>
 
-### 🔮 Future Plans
+<details>
+<summary><strong>How do I handle slow networks?</strong></summary>
 
-#### **🎯 High Priority**
-- ↶ **Undo/Redo System** 
-  - Simple undo (revert to last saved state)
-  - Advanced undo stack with granular history
-  - Configurable history depth and retention
-  - Smart conflict resolution on undo
-  - Integration with diff operations for complex undos
-  
-- 📋 **Conflict handling** (concurrent edit resolution strategies)
-- 💾 **Persistence** (cross-session state storage)
-- 🛠️ **DevTools integration** (browser extension for debugging)
-- 🌍 **Offline support** (queue operations when offline)
-- 📱 **React Native support**
+```tsx
+const { isSaving } = useRhfAutosave({
+  form,
+  transport,
+  config: {
+    debounceMs: 1000,    // Wait longer before saving
+    maxRetries: 5,       // More retry attempts
+  }
+});
+```
+</details>
+
+<details>
+<summary><strong>Can I use this with server components?</strong></summary>
+
+This is a client-side hook that requires React Hook Form, so it needs to be used in client components. However, the transport function can call server actions:
+
+```tsx
+'use client';
+
+import { useRhfAutosave } from 'react-hook-form-autosave';
+import { saveFormData } from './actions'; // Server action
+
+const { isSaving } = useRhfAutosave({
+  form,
+  transport: async (data) => {
+    try {
+      await saveFormData(data);
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, error };
+    }
+  }
+});
+```
+</details>
 
 ---
 
@@ -509,11 +778,4 @@ MIT © [Ziad Ziadeh](https://github.com/ziadeh)
 
 ---
 
-## 🙏 Acknowledgments
-
-- Built with ❤️ for the React Hook Form community
-- Inspired by modern form management needs
-
----
-
-**Star ⭐ this repo if it helped you build better forms!**
+**⭐ Star this repo if it saved you time building forms!**
