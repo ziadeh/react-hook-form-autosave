@@ -5,6 +5,7 @@ export { AutosaveManager } from "./core/autosave";
 
 // Adapters
 export * from "./adapters/rhf/useRhfAutosave";
+export { trpcTransport } from "./adapters/trpc/transport";
 
 // Strategies
 export * from "./strategies/validation";

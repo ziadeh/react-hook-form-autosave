@@ -93,6 +93,7 @@ export function useRhfAutosave<T extends FieldValues>(
   // Debouncing refs
   const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastQueuedSigRef = useRef<string>("");
+  const pendingPayloadRef = useRef<SavePayload>({});
 
   // Form state
   const values = form.watch();
@@ -205,13 +206,72 @@ export function useRhfAutosave<T extends FieldValues>(
       dispatch({ type: "SAVE_START" });
 
       try {
-        // Handle diff operations first
+        // Create a copy of the payload to modify
+        let remainingPayload = { ...payload };
+
+        // Handle diff operations first and remove those fields from the payload
         if (diffMap && Object.keys(diffMap).length > 0) {
-          await handleDiffOperations(payload, diffMap, baselineRef.current);
+          // Process diff operations and get the fields that were handled
+          const handledFields = new Set<string>();
+
+          for (const [key, handler] of Object.entries(diffMap)) {
+            if (!(key in payload)) continue;
+
+            const prev = baselineRef.current?.[key] || [];
+            const curr = (payload as any)[key] || [];
+
+            if (!Array.isArray(prev) || !Array.isArray(curr)) continue;
+
+            const prevIds = new Set(prev.map(handler.idOf));
+            const currIds = new Set(curr.map(handler.idOf));
+
+            const added = curr.filter(
+              (x: any) => !prevIds.has(handler.idOf(x))
+            );
+            const removed = prev.filter(
+              (x: any) => !currIds.has(handler.idOf(x))
+            );
+
+            logger.debug("Diff calculation", {
+              key,
+              baseline: prev.map(handler.idOf),
+              current: curr.map(handler.idOf),
+              added: added.map(handler.idOf),
+              removed: removed.map(handler.idOf),
+            });
+
+            // Execute diff operations
+            const operations: Array<() => Promise<void>> = [];
+
+            for (const item of added) {
+              operations.push(async () => {
+                const itemId = handler.idOf(item);
+                logger.debug(`onAdd: ${key}`, { itemId, item });
+                await Promise.resolve(handler.onAdd(item));
+              });
+            }
+
+            for (const item of removed) {
+              operations.push(async () => {
+                const itemId = handler.idOf(item);
+                logger.debug(`onRemove: ${key}`, { itemId, item });
+                await Promise.resolve(handler.onRemove(item));
+              });
+            }
+
+            // Execute all diff operations for this field
+            if (operations.length > 0) {
+              await Promise.all(operations.map((op) => op()));
+              handledFields.add(key);
+            }
+
+            // Remove this field from the remaining payload since it's been handled
+            delete remainingPayload[key];
+          }
         }
 
-        // Apply key transformations
-        let finalPayload = payload;
+        // Apply key transformations to remaining payload
+        let finalPayload = remainingPayload;
         if (keyMap) {
           finalPayload = mapKeys(finalPayload as any, keyMap) as SavePayload;
         }
@@ -219,11 +279,11 @@ export function useRhfAutosave<T extends FieldValues>(
           finalPayload = mapPayload(finalPayload as any) as SavePayload;
         }
 
-        // Early return if no payload to send
+        // Early return if no payload to send (everything was handled by diff operations)
         if (Object.keys(finalPayload).length === 0) {
           const duration = performance.now() - startTime;
           dispatch({ type: "SAVE_SUCCESS", duration });
-          updateBaseline(payload);
+          updateBaseline(payload); // Update baseline with original payload
           metrics.recordSave(duration, true);
           logger.debug("Save completed (diff operations only)", { duration });
 
@@ -232,19 +292,23 @@ export function useRhfAutosave<T extends FieldValues>(
           return result;
         }
 
-        // Execute base transport
+        // Execute base transport with remaining payload only
+        logger.debug("Calling transport with remaining payload", finalPayload);
         const result = await baseTransport(finalPayload, ctx);
         const duration = performance.now() - startTime;
 
         if (result.ok) {
           dispatch({ type: "SAVE_SUCCESS", duration });
-          updateBaseline(payload);
+          updateBaseline(payload); // Update baseline with original payload
           metrics.recordSave(duration, true);
           logger.debug("Save completed successfully", { result, duration });
         } else {
           dispatch({ type: "SAVE_ERROR", error: result.error, duration });
           metrics.recordSave(duration, false);
-          logger.error("Save failed", result.error, { payload, duration });
+          logger.error("Save failed", result.error, {
+            payload: finalPayload,
+            duration,
+          });
         }
 
         onSaved?.(result, payload);
@@ -268,7 +332,6 @@ export function useRhfAutosave<T extends FieldValues>(
     onSaved,
     metrics,
     logger,
-    handleDiffOperations,
     updateBaseline,
   ]);
 
@@ -289,6 +352,12 @@ export function useRhfAutosave<T extends FieldValues>(
         clearTimeout(debounceTimeoutRef.current);
       }
 
+      // Build payload from dirty fields immediately and store it
+      const basePayload = selectPayload(values, dirtyFields) as SavePayload;
+
+      // Store pending payload for tracking
+      pendingPayloadRef.current = basePayload;
+
       // Set a new timeout
       debounceTimeoutRef.current = setTimeout(async () => {
         try {
@@ -302,27 +371,28 @@ export function useRhfAutosave<T extends FieldValues>(
 
           if (!shouldTriggerSave) {
             logger.debug("Skipping save - shouldSave returned false");
+            pendingPayloadRef.current = {};
             return;
           }
 
-          // Build payload from all dirty fields
-          const basePayload = selectPayload(values, dirtyFields) as SavePayload;
+          // Use the stored pending payload
+          const payloadToSave = pendingPayloadRef.current;
 
-          if (Object.keys(basePayload).length === 0) {
+          if (Object.keys(payloadToSave).length === 0) {
             logger.debug("Skipping save - empty payload");
             return;
           }
 
           // Validate before queueing if requested
           if (validateBeforeSave !== "none") {
-            const sig = stableStringify(basePayload as any);
+            const sig = stableStringify(payloadToSave as any);
             let validationResult = validationCache.get(sig);
 
             if (validationResult === undefined) {
-              logger.debug("Running validation for payload", basePayload);
+              logger.debug("Running validation for payload", payloadToSave);
               validationResult = await validationStrategy.validate(
                 form,
-                basePayload
+                payloadToSave
               );
               validationCache.set(sig, validationResult);
               metrics.recordCacheMiss();
@@ -336,20 +406,28 @@ export function useRhfAutosave<T extends FieldValues>(
 
             if (!validationResult) {
               logger.debug("Skipping save - validation failed");
+              pendingPayloadRef.current = {};
               return;
             }
           }
 
           // Only queue if payload is meaningfully different
-          const sig = stableStringify(basePayload as any);
+          const sig = stableStringify(payloadToSave as any);
           if (sig === lastQueuedSigRef.current) {
             logger.debug("Skipping save - duplicate payload", sig);
+            pendingPayloadRef.current = {};
             return;
           }
           lastQueuedSigRef.current = sig;
 
-          logger.debug("Queueing change after debounce", basePayload);
-          manager.queueChange(basePayload);
+          logger.debug("Queueing change after debounce", payloadToSave);
+          manager.queueChange(payloadToSave);
+
+          // Clear pending after queueing
+          pendingPayloadRef.current = {};
+
+          // Explicitly flush after queueing
+          await manager.flush();
         } catch (error) {
           logger.error(
             "Error in debounced save",
@@ -413,6 +491,7 @@ export function useRhfAutosave<T extends FieldValues>(
     if (Object.keys(dirtyFields).length === 0 && !isDirty) {
       validationCache.clear();
       lastQueuedSigRef.current = "";
+      pendingPayloadRef.current = {};
       logger.debug("Cleared validation cache - form is clean");
     }
   }, [dirtyFields, isDirty, validationCache, logger]);
@@ -435,15 +514,25 @@ export function useRhfAutosave<T extends FieldValues>(
     isSaving: state.isSaving,
     lastError: state.lastError,
     metrics: state.metrics,
-
+    // Pending state
+    hasPendingChanges:
+      Object.keys(pendingPayloadRef.current).length > 0 || !manager.isEmpty(),
     // Actions
-    flush: useCallback(() => {
+    flush: useCallback(async () => {
       logger.debug("Manual flush requested");
       // Clear debounce and immediately flush
       if (debounceTimeoutRef.current) {
         clearTimeout(debounceTimeoutRef.current);
         debounceTimeoutRef.current = null;
       }
+
+      // If there are pending changes in the ref, queue them first
+      if (Object.keys(pendingPayloadRef.current).length > 0) {
+        logger.debug("Flushing pending changes", pendingPayloadRef.current);
+        manager.queueChange(pendingPayloadRef.current);
+        pendingPayloadRef.current = {};
+      }
+
       return manager.flush();
     }, [manager, logger]),
 
@@ -454,6 +543,8 @@ export function useRhfAutosave<T extends FieldValues>(
         clearTimeout(debounceTimeoutRef.current);
         debounceTimeoutRef.current = null;
       }
+      // Clear pending payload
+      pendingPayloadRef.current = {};
       manager.abort();
       dispatch({ type: "ABORT" });
     }, [manager, logger]),
@@ -486,23 +577,43 @@ export function useRhfAutosave<T extends FieldValues>(
     ),
 
     // Internal state for debugging
-    getPendingChanges: useCallback(
-      () => manager.getPendingChanges(),
-      [manager]
-    ),
+    getPendingChanges: useCallback(() => {
+      // Return both React-level pending and manager-level pending
+      const reactPending = pendingPayloadRef.current;
+      const managerPending = manager.getPendingChanges();
 
-    isEmpty: useCallback(() => manager.isEmpty(), [manager]),
+      // Merge both sources of pending changes
+      return { ...reactPending, ...managerPending };
+    }, [manager]),
+
+    isEmpty: useCallback(() => {
+      // Check both React-level and manager-level pending states
+      const reactPendingEmpty =
+        Object.keys(pendingPayloadRef.current).length === 0;
+      const managerEmpty = manager.isEmpty();
+      return reactPendingEmpty && managerEmpty;
+    }, [manager]),
 
     // Force save (bypass debounce)
-    forceSave: useCallback(() => {
+    forceSave: useCallback(async () => {
       logger.debug("Force save requested");
-      // Clear debounce and trigger immediate save
+      // Clear debounce
       if (debounceTimeoutRef.current) {
         clearTimeout(debounceTimeoutRef.current);
         debounceTimeoutRef.current = null;
       }
-      // Trigger immediate save with current form state
-      debouncedSave.call(null, values, dirtyFields);
-    }, [logger, values, dirtyFields, debouncedSave]),
+
+      // Build current payload even if not dirty
+      const currentPayload = selectPayload(values, dirtyFields) as SavePayload;
+
+      // Queue and flush immediately
+      if (Object.keys(currentPayload).length > 0) {
+        manager.queueChange(currentPayload);
+        pendingPayloadRef.current = {};
+        return manager.flush();
+      }
+
+      return { ok: true };
+    }, [logger, values, dirtyFields, selectPayload, manager]),
   };
 }
