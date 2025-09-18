@@ -29,6 +29,7 @@ export interface RhfAutosaveOptions<T extends FieldValues> {
   form: FormSubset<T>;
   transport: Transport;
   config?: Partial<AutosaveConfig>;
+  hasPendingChanges?: boolean;
   selectPayload?: (values: T, dirtyFields: any) => Partial<T>;
   shouldSave?: (ctx: {
     values: T;

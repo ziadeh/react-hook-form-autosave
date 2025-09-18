@@ -2,10 +2,23 @@
 
 All notable changes to **react-hook-form-autosave** will be documented here.
 
-## [2.0.2] - 2025-09-19
+## [2.1.1] - 2025-09-19
 
 ### Fixed
+- **types**: Added missing `hasPendingChanges?: boolean` property to `RhfAutosaveOptions` interface
+
+## [2.1.1] - 2025-09-19
+
+### Fixed
+
+- **types**: Added missing `hasPendingChanges?: boolean` property to `RhfAutosaveOptions` interface
+
+## [2.1.0] - 2025-09-19
+
+### Fixed
+
 - **autosave**: Fixed multiple critical issues with debouncing and diff operations
+
   - Fixed "Request aborted" errors when using diffMap with higher debounce times
   - Fixed immediate flush in queueChange that was bypassing debounce
   - Improved abort controller lifecycle management to prevent race conditions
@@ -13,6 +26,7 @@ All notable changes to **react-hook-form-autosave** will be documented here.
   - Fixed retry logic to respect abort signals
 
 - **diffMap**: Fixed fields handled by diffMap being incorrectly included in main transport
+
   - Fields with diff handlers are now properly excluded from the main payload
   - Diff operations (onAdd/onRemove) are executed separately as intended
   - Prevents timeout errors when diff fields have different endpoints
@@ -23,15 +37,17 @@ All notable changes to **react-hook-form-autosave** will be documented here.
   - `forceSave()` now returns a Promise for consistency
 
 ### Added
+
 - **hasPendingChanges**: New boolean property for checking if there are unsaved changes
 
 ### Improved
-- Better documentation for diffMap behavior
 
+- Better documentation for diffMap behavior
 
 ## [2.0.1] - 2025-09-18
 
 ### Fixed
+
 - **autosave**: Fixed multiple network requests being sent during typing
   - Now batches all keystrokes into single request after debounce period
 
