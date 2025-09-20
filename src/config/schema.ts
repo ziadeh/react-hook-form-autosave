@@ -1,22 +1,112 @@
-import { z } from "zod";
+// config/schema.ts
 
-export const AutosaveConfigSchema = z.object({
-  debounceMs: z.number().min(0).default(600),
-  maxRetries: z.number().min(0).default(3),
-  enableMetrics: z.boolean().default(false),
-  enableCache: z.boolean().default(true),
-  cacheSize: z.number().min(1).default(100),
-  cacheTtlMs: z
-    .number()
-    .min(1000)
-    .default(5 * 60 * 1000),
-  enableDebugLogs: z.boolean().optional(),
-});
+export type ConflictResolution = "client" | "server" | "merge";
 
-export type AutosaveConfig = z.infer<typeof AutosaveConfigSchema>;
+export interface AutosaveConfig {
+  debounceMs: number; // >= 0
+  maxRetries: number; // >= 0
+  enableMetrics: boolean;
+  enableCache: boolean;
+  cacheSize: number; // >= 1
+  cacheTtlMs: number; // >= 1000
+  enableDebugLogs?: boolean;
+  maxPayloadSize?: number; // any positive number; optional
+  rateLimitMs: number; // >= 0
+  offlineSupport: boolean;
+  conflictResolution: ConflictResolution;
+}
 
+const DEFAULT_CONFIG: AutosaveConfig = {
+  debounceMs: 600,
+  maxRetries: 3,
+  enableMetrics: false,
+  enableCache: true,
+  cacheSize: 100,
+  cacheTtlMs: 5 * 60 * 1000,
+  // enableDebugLogs: undefined,
+  // maxPayloadSize: undefined,
+  rateLimitMs: 0,
+  offlineSupport: false,
+  conflictResolution: "client",
+};
+
+// ---- runtime validation helpers (minimal, no zod) ----
+function isNumber(n: unknown): n is number {
+  return typeof n === "number" && Number.isFinite(n);
+}
+
+function assertNumber(
+  name: keyof AutosaveConfig,
+  value: unknown,
+  min?: number
+): number {
+  if (!isNumber(value)) {
+    throw new TypeError(`"${String(name)}" must be a finite number`);
+  }
+  if (min !== undefined && value < min) {
+    throw new RangeError(`"${String(name)}" must be >= ${min}`);
+  }
+  return value;
+}
+
+function assertBoolean(name: keyof AutosaveConfig, value: unknown): boolean {
+  if (typeof value !== "boolean") {
+    throw new TypeError(`"${String(name)}" must be a boolean`);
+  }
+  return value;
+}
+
+function assertConflictResolution(value: unknown): ConflictResolution {
+  if (value === "client" || value === "server" || value === "merge") {
+    return value;
+  }
+  throw new TypeError(
+    `"conflictResolution" must be one of "client" | "server" | "merge"`
+  );
+}
+
+// ---- public API ----
 export function createConfig(
   input: Partial<AutosaveConfig> = {}
 ): AutosaveConfig {
-  return AutosaveConfigSchema.parse(input);
+  // merge with defaults first, then validate
+  const merged: AutosaveConfig = { ...DEFAULT_CONFIG, ...input };
+
+  // required numeric fields with mins
+  merged.debounceMs = assertNumber("debounceMs", merged.debounceMs, 0);
+  merged.maxRetries = assertNumber("maxRetries", merged.maxRetries, 0);
+  merged.cacheSize = assertNumber("cacheSize", merged.cacheSize, 1);
+  merged.cacheTtlMs = assertNumber("cacheTtlMs", merged.cacheTtlMs, 1000);
+  merged.rateLimitMs = assertNumber("rateLimitMs", merged.rateLimitMs, 0);
+
+  // booleans
+  merged.enableMetrics = assertBoolean("enableMetrics", merged.enableMetrics);
+  merged.enableCache = assertBoolean("enableCache", merged.enableCache);
+  merged.offlineSupport = assertBoolean(
+    "offlineSupport",
+    merged.offlineSupport
+  );
+
+  // enum
+  merged.conflictResolution = assertConflictResolution(
+    merged.conflictResolution
+  );
+
+  // optional fields (validate only if provided)
+  if (input.enableDebugLogs !== undefined) {
+    merged.enableDebugLogs = assertBoolean(
+      "enableDebugLogs",
+      input.enableDebugLogs
+    );
+  }
+  if (input.maxPayloadSize !== undefined) {
+    merged.maxPayloadSize = assertNumber(
+      "maxPayloadSize",
+      input.maxPayloadSize
+    );
+  }
+
+  return merged;
 }
+
+export type { AutosaveConfig as default };

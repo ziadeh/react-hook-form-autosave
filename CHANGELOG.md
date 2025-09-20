@@ -2,6 +2,9 @@
 
 All notable changes to **react-hook-form-autosave** will be documented here.
 
+## [2.2.0] - 2025-09-20
+- Removed `zod` dependency
+
 ## [2.1.1] - 2025-09-19
 
 ### Fixed
