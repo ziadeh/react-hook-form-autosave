@@ -2,6 +2,8 @@ export type SavePayload = Record<string, unknown>;
 
 export type SaveResult =
   | { ok: true; version?: string; metadata?: Record<string, any> }
+  | { ok: false; error: Error; code?: string }
+  | { ok: true }
   | { ok: false; error: Error; code?: string };
 
 export interface SaveContext {

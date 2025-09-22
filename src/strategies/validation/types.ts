@@ -1,4 +1,9 @@
-import type { FieldErrors, FieldValues, UseFormTrigger } from "react-hook-form";
+import type {
+  FieldErrors,
+  FieldValues,
+  UseFormReturn,
+  UseFormTrigger,
+} from "react-hook-form";
 import type { SavePayload } from "../../core/types";
 
 export interface FormSubset<T extends FieldValues> {
@@ -10,8 +15,24 @@ export interface FormSubset<T extends FieldValues> {
     isValidating: boolean;
     errors?: FieldErrors<T>;
   };
-  reset: (values?: T) => void;
-  getValues: () => T;
+  reset: (
+    values?: T,
+    options?: {
+      keepErrors?: boolean;
+      keepDirty?: boolean;
+      keepDirtyValues?: boolean;
+      keepValues?: boolean;
+      keepDefaultValues?: boolean;
+      keepIsSubmitted?: boolean;
+      keepTouched?: boolean;
+      keepIsValid?: boolean;
+      keepSubmitCount?: boolean;
+    }
+  ) => void;
+  getValues: UseFormReturn<T>["getValues"];
+  setValue: UseFormReturn<T>["setValue"]; // ✅ add this
+  register: UseFormReturn<T>["register"]; // ✅ add this for {...register("field")}
+
   trigger: UseFormTrigger<T>;
 }
 
