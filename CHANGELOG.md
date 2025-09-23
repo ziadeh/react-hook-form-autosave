@@ -2,6 +2,117 @@
 
 All notable changes to **react-hook-form-autosave** will be documented here.
 
+## [3.0.0] - 2024-09-23
+
+### 🎉 Major Release - Undo/Redo Support & Perfect State Synchronization
+
+This release introduces powerful undo/redo capabilities and fixes all state tracking issues that have plagued autosave implementations.
+
+### ⭐ Headline Features
+
+#### Full Undo/Redo Support
+- **NEW**: Complete undo/redo system with keyboard shortcuts
+  - Automatic keyboard shortcuts: `Cmd/Ctrl+Z` for undo, `Shift+Cmd/Ctrl+Z` for redo
+  - Programmatic API: `undo()`, `redo()`, `canUndo`, `canRedo`
+  - Smart integration with autosave - only saves when needed after undo/redo
+  - `undoLastSave()` - Revert all changes since the last successful save
+  - Configurable via `undo: { enabled: true }` option
+  - Optional: Disable keyboard shortcuts or customize target element
+  - Works seamlessly with all field types including arrays
+
+#### Perfect State Synchronization
+- **FIXED**: `hasPendingChanges` now always returns the correct value
+  - Accurately tracks unsaved changes in all scenarios
+  - Properly syncs when data loads from API
+  - Correctly handles array field saves via `diffMap`
+  - Maintains accuracy through undo/redo operations
+
+#### Auto-Hydration
+- **NEW**: Automatic form synchronization when server data loads
+  - Detects when form is reset with new data from API
+  - Updates baseline and saved state automatically
+  - Prevents false "unsaved changes" after data loads
+  - Zero configuration required (enabled by default)
+  - Can be disabled with `autoHydrate: false`
+
+### 🔄 Breaking Changes
+
+#### Configuration Restructure
+- **MOVED**: Debug flag relocated to config object for consistency
+  ```typescript
+  // Before (v2.x)
+  useRhfAutosave({ form, transport, debug: true });
+  
+  // After (v3.x)
+  useRhfAutosave({ form, transport, config: { debug: true } });
+  ```
+
+#### Debug Behavior
+- **CHANGED**: Debug logging now defaults to `false` (previously auto-detected)
+  - Must explicitly enable with `config: { debug: true }`
+  - No automatic enabling in development mode
+  - Prevents accidental sensitive data exposure in production
+
+### 🐛 Critical Bug Fixes
+
+#### State Tracking Issues
+- **FIXED**: `hasPendingChanges` always returning `true` (#43)
+  - Introduced internal `lastSavedState` tracking
+  - Properly compares current state with last successful save
+  - Correctly handles server data hydration
+
+- **FIXED**: Array fields remaining dirty after successful save (#45)
+  - Form now properly resets dirty state for `diffMap` fields
+  - Arrays handled via `diffMap` are correctly marked as clean
+
+- **FIXED**: Form state out of sync after API data loads (#44)
+  - Auto-hydration detects and syncs server data
+  - Baseline updates when data loads
+  - Eliminates false positives in pending state
+
+#### Technical Issues
+- **FIXED**: Manager initialization circular dependency error
+- **FIXED**: `flush()` not working correctly
+- **FIXED**: Undo/redo stack corruption when reaching boundaries
+
+### 🔧 Improvements
+
+#### Enhanced Developer Experience
+- **NEW**: `hydrateFromServer(data)` method for manual sync control
+- **NEW**: Comprehensive debug logging with namespaces
+- **IMPROVED**: Better TypeScript types throughout
+- **SIMPLIFIED**: Single `debug` configuration flag
+
+#### Performance Optimizations
+- **OPTIMIZED**: Reduced unnecessary re-renders
+- **IMPROVED**: More efficient state comparisons
+- **ENHANCED**: Better debounce handling for complex operations
+
+#### Reliability
+- **IMPROVED**: More robust error handling
+- **ENHANCED**: Better cleanup on unmount
+- **FIXED**: Race conditions in concurrent operations
+
+### 📝 Documentation
+- Complete rewrite with undo/redo examples
+- New section on state synchronization
+- Comprehensive migration guide from v2 to v3
+- Better troubleshooting guides
+- Interactive examples for common patterns
+
+### 🎯 What This Means For You
+
+**If you're upgrading from v2.x:**
+1. Move `debug` into the config object
+2. Enjoy automatic undo/redo support
+3. No more `hasPendingChanges` issues
+4. Better array field handling out of the box
+
+**If you're new to the library:**
+- Get professional undo/redo UX with zero effort
+- Never worry about state synchronization
+- Reliable autosave that just works
+
 ## [2.2.0] - 2025-09-20
 - Removed `zod` dependency
 

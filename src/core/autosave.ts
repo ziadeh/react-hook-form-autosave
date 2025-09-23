@@ -36,7 +36,7 @@ export class AutosaveManager {
     });
 
     // FIX: Immediately flush since debouncing is handled at the React level
-    void this.flush();
+    // void this.flush();
   }
 
   async flush(): Promise<SaveResult> {

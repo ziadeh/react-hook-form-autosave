@@ -2,6 +2,9 @@ import type { FieldValues } from "react-hook-form";
 import type { SaveResult, Transport, SavePayload } from "../core/types";
 import type { FormSubset } from "../strategies/validation/types";
 
+/* -----------------------------
+ * Mock Transport
+ * ----------------------------- */
 export function createMockTransport(
   responses: SaveResult[] = [{ ok: true }]
 ): Transport & { getCalls: () => SavePayload[] } {
@@ -20,24 +23,73 @@ export function createMockTransport(
   });
 }
 
+/* -----------------------------
+ * Mock FormSubset<T>
+ * - getValues(name?) supported
+ * - setValue(...) stubbed
+ * - register(...) stubbed
+ * ----------------------------- */
 export function createMockForm<T extends FieldValues>(
   overrides: Partial<FormSubset<T>> = {}
 ): FormSubset<T> {
+  // Minimal register stub compatible with RHF
+  const registerStub = ((name: any) => {
+    // You can enhance this if a test needs specific behavior
+    return {
+      name,
+      onChange: jest.fn(),
+      onBlur: jest.fn(),
+      ref: jest.fn(),
+    } as any;
+  }) as FormSubset<T>["register"];
+
+  // getValues that supports both 0-arg and 1-arg forms
+  const getValuesStub = ((name?: any) => {
+    // If a single path is requested, return undefined by default
+    if (typeof name === "string") return undefined as any;
+    // No args -> return the whole values object
+    return {} as T;
+  }) as FormSubset<T>["getValues"];
+
+  // setValue stub – records calls, no side effects by default
+  const setValueStub = jest.fn((_: any, __: any, ___?: any) => {
+    // no-op
+  }) as unknown as FormSubset<T>["setValue"];
+
+  // watch stub – simplest: return whole values when called without args
+  const watchStub = jest.fn(
+    (_: any) => ({} as T)
+  ) as unknown as FormSubset<T>["watch"];
+
+  const triggerStub = jest.fn(() =>
+    Promise.resolve(true)
+  ) as unknown as FormSubset<T>["trigger"];
+
   return {
-    watch: jest.fn(() => ({} as T)),
+    watch: watchStub,
     formState: {
       isDirty: false,
       isValid: true,
       dirtyFields: {},
       isValidating: false,
     },
+    // Some suites use reset/trigger; keep them available (even if not in FormSubset)
     reset: jest.fn(),
-    getValues: jest.fn(() => ({} as T)),
-    trigger: jest.fn(() => Promise.resolve(true)),
+    trigger: triggerStub,
+
+    // Updated/added to satisfy new FormSubset<T> needs
+    getValues: getValuesStub,
+    setValue: setValueStub,
+    register: registerStub,
+
+    // Allow tests to override any of the above
     ...overrides,
-  };
+  } as FormSubset<T>;
 }
 
+/* -----------------------------
+ * Mock timer utilities
+ * ----------------------------- */
 export class MockTimer {
   private timers = new Map<number, { callback: () => void; delay: number }>();
   private nextId = 1;
