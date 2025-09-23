@@ -21,6 +21,7 @@ interface ComposeTransportParams {
   undoAffectedFieldsRef?: { current: Set<string> };
   dispatch?: (action: any) => void;
   form?: any;
+  updateLastSavedState?: (values: any) => void; // NEW: Add this parameter
 }
 
 export function createComposedTransport({
@@ -38,7 +39,8 @@ export function createComposedTransport({
   lastOpRef,
   undoAffectedFieldsRef,
   dispatch,
-  form, // NEW: Add form parameter
+  form,
+  updateLastSavedState, // NEW: Accept this parameter
 }: ComposeTransportParams): Transport {
   return async (payload: SavePayload, ctx?: SaveContext) => {
     const start = performance.now();
@@ -96,6 +98,13 @@ export function createComposedTransport({
         dispatch?.({ type: "SAVE_SUCCESS", duration });
         updateBaseline?.(payload);
         metrics?.recordSave(duration, true);
+
+        // NEW: Update last saved state
+        if (form && updateLastSavedState) {
+          const currentValues = form.getValues();
+          updateLastSavedState(currentValues);
+        }
+
         onSaved?.({ ok: true as const }, payload);
         // checkpoint on "no-op" payload still represents alignment with server
         if (undoEnabled && undoMgrRef?.current) {
@@ -116,9 +125,15 @@ export function createComposedTransport({
         if (lastOpRef) lastOpRef.current = null;
         if (undoAffectedFieldsRef) undoAffectedFieldsRef.current.clear();
 
-        // NEW: Reset form dirty state without clearing undo history
+        // Reset form dirty state without clearing undo history
         if (form) {
           const currentValues = form.getValues();
+
+          // NEW: Update last saved state BEFORE resetting form
+          if (updateLastSavedState) {
+            updateLastSavedState(currentValues);
+          }
+
           form.reset(currentValues, {
             keepValues: true,
             keepDirty: false,

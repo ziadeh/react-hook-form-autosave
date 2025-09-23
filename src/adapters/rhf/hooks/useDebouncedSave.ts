@@ -40,6 +40,7 @@ interface DebouncedSaveHookParams<T extends FieldValues> {
   setLastQueuedSig: (sig: string) => void;
   setHistoryPending: (pending: boolean) => void;
   setNoPendingGuard: (guard: boolean) => void;
+  updateLastSavedState?: (values: any) => void; // NEW: Add this parameter
 }
 
 export function useDebouncedSave<T extends FieldValues>({
@@ -67,6 +68,7 @@ export function useDebouncedSave<T extends FieldValues>({
   setLastQueuedSig,
   setHistoryPending,
   setNoPendingGuard,
+  updateLastSavedState, // NEW: Accept this parameter
 }: DebouncedSaveHookParams<T>) {
   const validationStrategy = useMemo(
     () => createValidationStrategy<T>(validateBeforeSave),
@@ -125,6 +127,10 @@ export function useDebouncedSave<T extends FieldValues>({
             if (equalsBaseline(snap)) {
               setHistoryPending(false);
               setNoPendingGuard(true);
+              // Update last saved state since we're in sync
+              if (updateLastSavedState) {
+                updateLastSavedState(snap);
+              }
             }
             return;
           }
@@ -164,6 +170,10 @@ export function useDebouncedSave<T extends FieldValues>({
             if (equalsBaseline(snap)) {
               setHistoryPending(false);
               setNoPendingGuard(true);
+              // Update last saved state since we're in sync
+              if (updateLastSavedState) {
+                updateLastSavedState(snap);
+              }
             }
             return;
           }
@@ -181,6 +191,12 @@ export function useDebouncedSave<T extends FieldValues>({
 
           clearPendingPayload();
           setHistoryPending(false);
+
+          // Update last saved state on successful save
+          if (result.ok && updateLastSavedState) {
+            const currentValues = form.getValues();
+            updateLastSavedState(currentValues);
+          }
 
           const snapAfter = form.getValues();
           if (equalsBaseline(snapAfter)) {
@@ -220,6 +236,7 @@ export function useDebouncedSave<T extends FieldValues>({
       manager,
       config.debounceMs,
       setDebounceTimeout,
+      updateLastSavedState, // Include in dependencies
     ]
   );
 
@@ -243,6 +260,12 @@ export function useDebouncedSave<T extends FieldValues>({
       clearPendingPayload();
       const res = await manager.flush();
       setHistoryPending(false);
+
+      // Update last saved state on successful save
+      if (res.ok && updateLastSavedState) {
+        updateLastSavedState(currentValues);
+      }
+
       return res;
     }
     return { ok: true } as const;
@@ -254,6 +277,7 @@ export function useDebouncedSave<T extends FieldValues>({
     manager,
     clearPendingPayload,
     setHistoryPending,
+    updateLastSavedState,
   ]);
 
   return {

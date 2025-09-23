@@ -16,6 +16,11 @@ import {
 } from "../utils/diff";
 import { createLogger, type Logger } from "../../../utils/logger";
 
+interface UndoRedoHookParams {
+  updateBaseline?: (values: any) => void;
+  updateLastSavedState?: (values: any) => void;
+}
+
 export function useUndoRedo<T extends FieldValues>(
   form: FormSubset<T>,
   undoOptions: UndoOptions | undefined,
@@ -27,8 +32,9 @@ export function useUndoRedo<T extends FieldValues>(
     isValid: boolean;
     isDirty: boolean;
     dirtyFields: any;
-  }) => boolean, // NEW: Add shouldSave function
-  debug?: boolean
+  }) => boolean,
+  debug?: boolean,
+  params?: UndoRedoHookParams // NEW: Add optional params for baseline/saved state updates
 ) {
   const logger = createLogger("undo-redo", debug);
 
@@ -434,6 +440,9 @@ export function useUndoRedo<T extends FieldValues>(
       lastValuesRef.current = data;
       lastRecordedValuesSigRef.current = stableStringify(data as any);
 
+      // IMPORTANT: Update baseline and saved state are handled by useAutosaveEffects
+      // which calls this function and then updates those states
+
       suppressRecordRef.current = null;
       Promise.resolve().then(() => {
         isHydratingRef.current = false;
@@ -481,12 +490,20 @@ export function useUndoRedo<T extends FieldValues>(
       lastValuesRef.current = data;
       lastRecordedValuesSigRef.current = stableStringify(data as any);
 
+      // Update baseline and saved state if provided
+      if (params?.updateBaseline) {
+        params.updateBaseline(data);
+      }
+      if (params?.updateLastSavedState) {
+        params.updateLastSavedState(data);
+      }
+
       suppressRecordRef.current = null;
       Promise.resolve().then(() => {
         isHydratingRef.current = false;
       });
     },
-    [form, logger]
+    [form, logger, params]
   );
 
   return {

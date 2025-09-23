@@ -4,18 +4,22 @@ import type { FormSubset } from "../../../strategies/validation/types";
 import type { SavePayload } from "../../../core/types";
 import type { PendingState } from "../utils/types";
 import { AutosaveManager } from "../../../core/autosave";
+import { createLogger } from "../../../utils/logger";
 
 export function usePendingState<T extends FieldValues>(
   form: FormSubset<T>,
   manager: AutosaveManager,
   equalsBaseline: (vals: any) => boolean,
-  ignoreHistoryOps: boolean
+  ignoreHistoryOps: boolean,
+  debug?: boolean
 ) {
+  const logger = createLogger("pending-state", debug);
   const debounceTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastQueuedSigRef = useRef<string>("");
   const pendingPayloadRef = useRef<SavePayload>({});
   const historyPendingRef = useRef(false);
   const noPendingGuardRef = useRef(false);
+  const lastSavedStateRef = useRef<string>("");
 
   const clearDebounceTimeout = useCallback(() => {
     if (debounceTimeoutRef.current) {
@@ -51,30 +55,59 @@ export function usePendingState<T extends FieldValues>(
     []
   );
 
+  const updateLastSavedState = useCallback(
+    (values: any) => {
+      const stableValues = JSON.stringify(
+        Object.keys(values)
+          .sort()
+          .reduce((acc, key) => {
+            acc[key] = values[key];
+            return acc;
+          }, {} as any)
+      );
+      lastSavedStateRef.current = stableValues;
+      logger.debug("Updated last saved state", { stableValues });
+    },
+    [logger]
+  );
+
   const computeHasPendingChanges = useCallback(() => {
-    // Debug logging to understand what's happening
     const debugInfo = {
       noPendingGuard: noPendingGuardRef.current,
       pendingPayloadKeys: Object.keys(pendingPayloadRef.current),
       managerEmpty: manager.isEmpty(),
       historyPending: historyPendingRef.current,
       ignoreHistoryOps,
+      debounceActive: !!debounceTimeoutRef.current,
+      isDirty: form.formState.isDirty,
+      dirtyFieldsCount: Object.keys(form.formState.dirtyFields).length,
     };
 
-    // If we explicitly set no pending guard, respect it only briefly
+    logger.debug("[hasPendingChanges] Checking state", debugInfo);
+
+    // If we explicitly set no pending guard, respect it
     if (noPendingGuardRef.current) {
-      // Auto-clear the guard after a short delay to prevent it from sticking
+      // Auto-clear the guard after a short delay
       setTimeout(() => {
         noPendingGuardRef.current = false;
       }, 100);
-      console.debug("[hasPendingChanges] No pending guard active", debugInfo);
+      logger.debug("[hasPendingChanges] No pending guard active", debugInfo);
       return false;
+    }
+
+    // Check if there's an active debounce timer (save is scheduled but not executed)
+    if (debounceTimeoutRef.current) {
+      logger.debug(
+        "[hasPendingChanges] Debounce timer active - changes pending",
+        debugInfo
+      );
+      return true;
     }
 
     // Check if we have pending payload in React layer
     const reactPending = Object.keys(pendingPayloadRef.current).length > 0;
     if (reactPending) {
-      console.debug(
+      logger.debug(
         "[hasPendingChanges] React pending payload exists",
         debugInfo
       );
@@ -84,7 +117,7 @@ export function usePendingState<T extends FieldValues>(
     // Check if manager has pending changes
     const managerPending = !manager.isEmpty();
     if (managerPending) {
-      console.debug(
+      logger.debug(
         "[hasPendingChanges] Manager has pending changes",
         debugInfo
       );
@@ -93,7 +126,45 @@ export function usePendingState<T extends FieldValues>(
 
     // Check history operations if not ignoring them
     if (!ignoreHistoryOps && historyPendingRef.current) {
-      console.debug("[hasPendingChanges] History operation pending", debugInfo);
+      logger.debug("[hasPendingChanges] History operation pending", debugInfo);
+      return true;
+    }
+
+    // NEW: If form is dirty but we have a matching saved state, we're actually clean
+    if (form.formState.isDirty && lastSavedStateRef.current) {
+      try {
+        const currentValues = form.getValues();
+        const currentStableValues = JSON.stringify(
+          Object.keys(currentValues)
+            .sort()
+            .reduce((acc, key) => {
+              acc[key] = currentValues[key];
+              return acc;
+            }, {} as any)
+        );
+
+        if (currentStableValues === lastSavedStateRef.current) {
+          logger.debug(
+            "[hasPendingChanges] Current values match last saved state - no pending changes",
+            {
+              ...debugInfo,
+              currentMatchesSaved: true,
+            }
+          );
+          return false;
+        }
+      } catch (error) {
+        logger.error("[hasPendingChanges] Error comparing saved state");
+      }
+    }
+
+    // Check if form has dirty fields (standard RHF dirty tracking)
+    const hasDirtyFields = Object.keys(form.formState.dirtyFields).length > 0;
+    if (hasDirtyFields) {
+      logger.debug("[hasPendingChanges] Form has dirty fields", {
+        ...debugInfo,
+        dirtyFields: Object.keys(form.formState.dirtyFields),
+      });
       return true;
     }
 
@@ -101,17 +172,16 @@ export function usePendingState<T extends FieldValues>(
     try {
       const currentValues = form.getValues();
       const baselineEqual = equalsBaseline(currentValues);
-      console.debug("[hasPendingChanges] Baseline comparison", {
+      logger.debug("[hasPendingChanges] Baseline comparison", {
         ...debugInfo,
         baselineEqual,
-        currentValues: Object.keys(currentValues),
       });
       return !baselineEqual;
     } catch (error) {
-      console.error("[hasPendingChanges] Error comparing with baseline", error);
+      logger.error("[hasPendingChanges] Error comparing with baseline");
       return false;
     }
-  }, [manager, ignoreHistoryOps, form, equalsBaseline]);
+  }, [manager, ignoreHistoryOps, form, equalsBaseline, logger]);
 
   const getPendingChanges = useCallback(() => {
     const reactPending = pendingPayloadRef.current;
@@ -123,7 +193,8 @@ export function usePendingState<T extends FieldValues>(
     const reactPendingEmpty =
       Object.keys(pendingPayloadRef.current).length === 0;
     const managerEmpty = manager.isEmpty();
-    return reactPendingEmpty && managerEmpty;
+    const debounceEmpty = !debounceTimeoutRef.current;
+    return reactPendingEmpty && managerEmpty && debounceEmpty;
   }, [manager]);
 
   const flush = useCallback(async () => {
@@ -132,17 +203,34 @@ export function usePendingState<T extends FieldValues>(
       manager.queueChange(pendingPayloadRef.current);
       pendingPayloadRef.current = {};
     }
-    return manager.flush();
-  }, [manager, clearDebounceTimeout]);
+    const result = await manager.flush();
+
+    // Update last saved state after successful flush
+    if (result.ok) {
+      const currentValues = form.getValues();
+      updateLastSavedState(currentValues);
+    }
+
+    return result;
+  }, [manager, clearDebounceTimeout, form, updateLastSavedState]);
 
   const abort = useCallback(() => {
     clearDebounceTimeout();
     pendingPayloadRef.current = {};
     historyPendingRef.current = false;
     const snap = form.getValues();
-    if (equalsBaseline(snap)) noPendingGuardRef.current = true;
+    if (equalsBaseline(snap)) {
+      noPendingGuardRef.current = true;
+      updateLastSavedState(snap);
+    }
     manager.abort();
-  }, [manager, clearDebounceTimeout, form, equalsBaseline]);
+  }, [
+    manager,
+    clearDebounceTimeout,
+    form,
+    equalsBaseline,
+    updateLastSavedState,
+  ]);
 
   return {
     // Refs (for other hooks to access)
@@ -160,6 +248,7 @@ export function usePendingState<T extends FieldValues>(
     setNoPendingGuard,
     setLastQueuedSig,
     setDebounceTimeout,
+    updateLastSavedState,
 
     // Computed values
     computeHasPendingChanges,

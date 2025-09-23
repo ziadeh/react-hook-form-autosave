@@ -18,7 +18,7 @@ interface AutosaveEffectsParams<T extends FieldValues> {
   ignoreHistoryOps: boolean;
   validationCache: ValidationCache;
   debouncedSave: (values: T, dirtyFields: any, forceAfterUndo: boolean) => void;
-  autoHydrate?: boolean; // NEW: option to enable/disable auto hydration
+  autoHydrate?: boolean;
   // State refs
   isHydratingRef: { current: boolean };
   isBaselineInitializedRef: { current: boolean };
@@ -33,6 +33,7 @@ interface AutosaveEffectsParams<T extends FieldValues> {
   clearPendingPayload: () => void;
   setLastQueuedSig: (sig: string) => void;
   setNoPendingGuard: (guard: boolean) => void;
+  updateLastSavedState?: (values: any) => void; // NEW: Add this
   // Hydration action
   handleHydration: (data: T) => void;
   // Undo manager ref
@@ -51,7 +52,7 @@ export function useAutosaveEffects<T extends FieldValues>({
   ignoreHistoryOps,
   validationCache,
   debouncedSave,
-  autoHydrate = true, // NEW: default to true
+  autoHydrate = true,
   isHydratingRef,
   isBaselineInitializedRef,
   lastOpRef,
@@ -64,6 +65,7 @@ export function useAutosaveEffects<T extends FieldValues>({
   clearPendingPayload,
   setLastQueuedSig,
   setNoPendingGuard,
+  updateLastSavedState, // NEW: Accept this
   handleHydration,
   undoMgrRef,
 }: AutosaveEffectsParams<T>) {
@@ -104,7 +106,22 @@ export function useAutosaveEffects<T extends FieldValues>({
         newValues: values,
       });
 
+      // Handle hydration
       handleHydration(values);
+
+      // CRITICAL: Update baseline with hydrated values
+      initializeBaseline(values as any);
+      isBaselineInitializedRef.current = true;
+
+      // CRITICAL: Update last saved state with hydrated values
+      if (updateLastSavedState) {
+        updateLastSavedState(values);
+      }
+
+      // Clear any pending changes since we're now in sync with server
+      clearPendingPayload();
+      setLastQueuedSig("");
+      setNoPendingGuard(true);
     }
 
     // Update previous state
@@ -118,19 +135,34 @@ export function useAutosaveEffects<T extends FieldValues>({
     isHydratingRef,
     logger,
     handleHydration,
+    initializeBaseline,
+    isBaselineInitializedRef,
+    updateLastSavedState,
+    clearPendingPayload,
+    setLastQueuedSig,
+    setNoPendingGuard,
   ]);
 
-  // Initialize baseline once, from clean state
+  // Initialize baseline once, from clean state (but skip if hydration handled it)
   useEffect(() => {
     if (!diffMap && !undoEnabled) return;
 
-    if (!isDirty && !isBaselineInitializedRef.current) {
+    if (
+      !isDirty &&
+      !isBaselineInitializedRef.current &&
+      !isHydratingRef.current
+    ) {
       const currentValues = form.getValues() as any;
       logger.debug(
         "Initializing baseline from clean form state",
         currentValues
       );
       initializeBaseline(currentValues);
+
+      // Also update last saved state
+      if (updateLastSavedState) {
+        updateLastSavedState(currentValues);
+      }
     }
   }, [
     isDirty,
@@ -140,6 +172,8 @@ export function useAutosaveEffects<T extends FieldValues>({
     logger,
     initializeBaseline,
     isBaselineInitializedRef,
+    isHydratingRef,
+    updateLastSavedState,
   ]);
 
   // When form becomes clean (e.g., after reset), reset baseline
@@ -147,11 +181,11 @@ export function useAutosaveEffects<T extends FieldValues>({
     if (!isDirty && Object.keys(dirtyFields).length === 0) {
       // Only reset if we're not hydrating (hydration handles its own baseline)
       if (!isHydratingRef.current) {
-        isBaselineInitializedRef.current = false;
-        resetBaseline();
+        // Don't reset baseline here - it should stay as the last saved state
+        // isBaselineInitializedRef.current = false;
+        // resetBaseline();
         undoAffectedFieldsRef.current.clear();
       }
-      // keep undo history to allow undo-after-save behavior
     }
   }, [
     isDirty,
@@ -241,7 +275,7 @@ export function useAutosaveEffects<T extends FieldValues>({
     if (Object.keys(dirtyFields).length === 0 && !isDirty) {
       validationCache.clear();
       setLastQueuedSig("");
-      clearPendingPayload();
+      // Don't clear pending payload here - let the save logic handle it
       undoAffectedFieldsRef.current.clear();
     }
   }, [
@@ -249,7 +283,6 @@ export function useAutosaveEffects<T extends FieldValues>({
     isDirty,
     validationCache,
     setLastQueuedSig,
-    clearPendingPayload,
     undoAffectedFieldsRef,
   ]);
 

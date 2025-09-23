@@ -71,6 +71,26 @@ export function useRhfAutosave<T extends FieldValues>(
   // Initialize baseline management
   const baseline = useBaseline(form, diffMap, undoEnabled, debug);
 
+  // Initialize autosave manager FIRST (with dummy transport, will be updated)
+  const manager = useMemo(
+    () =>
+      new AutosaveManager(
+        async () => ({ ok: true }), // Temporary transport
+        config.debounceMs || 600,
+        logger
+      ),
+    [config.debounceMs, logger]
+  );
+
+  // NOW initialize pending state with the actual manager
+  const pendingState = usePendingState(
+    form,
+    manager,
+    baseline.equalsBaseline,
+    ignoreHistoryOps,
+    debug
+  );
+
   // Initialize effective dirty fields getter
   const getEffectiveDirtyFields = useMemo(
     () =>
@@ -108,7 +128,7 @@ export function useRhfAutosave<T extends FieldValues>(
     );
   }, [userShouldSave, getEffectiveDirtyFields, baseline.baselineRef]);
 
-  // Create composed transport
+  // Create composed transport with updateLastSavedState
   const composedTransport = useMemo(
     () =>
       createComposedTransport({
@@ -124,6 +144,7 @@ export function useRhfAutosave<T extends FieldValues>(
         baselineRef: baseline.baselineRef,
         dispatch,
         form,
+        updateLastSavedState: pendingState.updateLastSavedState,
       }),
     [
       baseTransport,
@@ -137,23 +158,15 @@ export function useRhfAutosave<T extends FieldValues>(
       logger,
       baseline.baselineRef,
       form,
+      pendingState.updateLastSavedState,
+      dispatch,
     ]
   );
 
-  // Initialize autosave manager
-  const manager = useMemo(
-    () =>
-      new AutosaveManager(composedTransport, config.debounceMs || 600, logger),
-    [composedTransport, config.debounceMs, logger]
-  );
-
-  // Initialize pending state management
-  const pendingState = usePendingState(
-    form,
-    manager,
-    baseline.equalsBaseline,
-    ignoreHistoryOps
-  );
+  // Update manager's transport to use the composed one
+  useEffect(() => {
+    (manager as any).transport = composedTransport;
+  }, [manager, composedTransport]);
 
   // Initialize debounced save
   const debouncedSaveHook = useDebouncedSave({
@@ -179,8 +192,12 @@ export function useRhfAutosave<T extends FieldValues>(
     ignoreHistoryOps,
     baseline.equalsBaseline,
     debouncedSaveHook.debouncedSave,
-    shouldSave, // NEW: Pass shouldSave function
-    debug
+    shouldSave,
+    debug,
+    {
+      updateBaseline: baseline.initializeBaseline,
+      updateLastSavedState: pendingState.updateLastSavedState,
+    }
   );
 
   // Now connect the lastOpRef to the selectPayload and shouldSave
@@ -238,10 +255,11 @@ export function useRhfAutosave<T extends FieldValues>(
     clearPendingPayload: pendingState.clearPendingPayload,
     setLastQueuedSig: pendingState.setLastQueuedSig,
     setNoPendingGuard: pendingState.setNoPendingGuard,
-    autoHydrate, // NEW: pass the option
+    updateLastSavedState: pendingState.updateLastSavedState, // ADD THIS
+    autoHydrate,
     lastRecordedValuesSigRef: undoRedo.lastRecordedValuesSigRef,
-    handleHydration: undoRedo.handleHydration, // NEW: pass the handler
-    undoMgrRef: undoRedo.undoMgrRef, // NEW: pass undo manager ref
+    handleHydration: undoRedo.handleHydration,
+    undoMgrRef: undoRedo.undoMgrRef,
   });
 
   // Cleanup effect
@@ -259,7 +277,7 @@ export function useRhfAutosave<T extends FieldValues>(
     lastError: state.lastError,
     metrics: state.metrics,
 
-    // Pending
+    // Pending - Now using the accurate computation
     hasPendingChanges: pendingState.computeHasPendingChanges(),
 
     // Actions
