@@ -155,30 +155,62 @@ export function useUndoRedo<T extends FieldValues>(
       suppressRecordRef.current === "redo" ||
       suppressRecordRef.current === "hydrate"
     ) {
-      suppressRecordRef.current = null;
+      // Clear suppress flag after a delay to ensure operation completes
+      if (
+        suppressRecordRef.current === "undo" ||
+        suppressRecordRef.current === "redo"
+      ) {
+        // Keep the suppress flag longer for history operations
+        // This prevents recording the change that the undo/redo itself makes
+      } else {
+        suppressRecordRef.current = null;
+      }
       lastValuesRef.current = values;
       return;
     }
+
     noPendingGuardRef.current = false;
 
     const mgr = undoMgrRef.current!;
     const prev = lastValuesRef.current;
     const next = values;
     const patches = diffToPatches(prev, next, "");
-    noPendingGuardRef.current = false;
+
     if (patches.length) {
       // De-dupe identical logical state (StrictMode)
       const nextSig = stableStringify(next as any);
       if (nextSig !== lastRecordedValuesSigRef.current) {
-        mgr.clearFuture();
+        // This is a real change
+
+        // Only clear future if:
+        // 1. We have a future stack (user had undone something)
+        // 2. This is a NEW user change (not from undo/redo)
+        // 3. The last operation was not undo/redo
+        if (
+          mgr.canRedo() &&
+          lastOpRef.current !== "undo" &&
+          lastOpRef.current !== "redo"
+        ) {
+          logger.debug("Clearing redo stack due to new user change");
+          mgr.clearFuture();
+        }
+
+        // Record the change
         mgr.record(patches);
         lastOpRef.current = "user";
         lastRecordedValuesSigRef.current = nextSig;
         noPendingGuardRef.current = false;
+
+        logger.debug("Recorded user change", {
+          patches: patches.length,
+          canUndo: mgr.canUndo(),
+          canRedo: mgr.canRedo(),
+          state: mgr.getState(),
+        });
       }
     }
     lastValuesRef.current = next;
-  }, [values, undoEnabled]);
+  }, [values, undoEnabled, logger]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -235,12 +267,17 @@ export function useUndoRedo<T extends FieldValues>(
   const executeUndo = useCallback(() => {
     if (!undoMgrRef.current) return;
 
+    logger.debug("Execute undo - state before:", undoMgrRef.current.getState());
+
     undoAffectedFieldsRef.current.clear();
     suppressRecordRef.current = "undo";
     lastOpRef.current = "undo";
 
     // Perform the undo
     const undoSuccessful = undoMgrRef.current.undo();
+
+    logger.debug("Execute undo - state after:", undoMgrRef.current.getState());
+
     if (!undoSuccessful) {
       // Reset state if undo failed
       suppressRecordRef.current = null;
@@ -271,6 +308,7 @@ export function useUndoRedo<T extends FieldValues>(
         isDirty,
         dirtyFieldsCount: Object.keys(dirtyFields).length,
         ignoreHistoryOps,
+        undoRedoState: undoMgrRef.current?.getState(),
       });
 
       if (baselineAfter) {
@@ -325,12 +363,17 @@ export function useUndoRedo<T extends FieldValues>(
   const executeRedo = useCallback(() => {
     if (!undoMgrRef.current) return;
 
+    logger.debug("Execute redo - state before:", undoMgrRef.current.getState());
+
     undoAffectedFieldsRef.current.clear();
     suppressRecordRef.current = "redo";
     lastOpRef.current = "redo";
 
     // Perform the redo
     const redoSuccessful = undoMgrRef.current.redo();
+
+    logger.debug("Execute redo - state after:", undoMgrRef.current.getState());
+
     if (!redoSuccessful) {
       // Reset state if redo failed
       suppressRecordRef.current = null;
@@ -361,6 +404,7 @@ export function useUndoRedo<T extends FieldValues>(
         isDirty,
         dirtyFieldsCount: Object.keys(dirtyFields).length,
         ignoreHistoryOps,
+        undoRedoState: undoMgrRef.current?.getState(),
       });
 
       if (baselineAfter) {
@@ -414,18 +458,47 @@ export function useUndoRedo<T extends FieldValues>(
   const executeUndoLastSave = useCallback(() => {
     if (!undoMgrRef.current) return;
 
+    logger.debug("Execute undoLastSave - reverting to last save point");
+
     suppressRecordRef.current = "undo";
     lastOpRef.current = "undo";
-    if (!ignoreHistoryOps) historyPendingRef.current = true;
-    undoMgrRef.current.undoToLastCheckpoint();
-    if (!ignoreHistoryOps) {
-      setTimeout(() => {
-        const currentValuesAfter = form.getValues();
-        const currentDirtyFields = form.formState.dirtyFields;
-        debouncedSave(currentValuesAfter as T, currentDirtyFields, true);
-      }, 100);
+
+    // Try to undo to last checkpoint
+    const undidSomething = undoMgrRef.current.undoToLastCheckpoint();
+
+    if (!undidSomething) {
+      logger.debug("No changes to undo");
+      suppressRecordRef.current = null;
+      lastOpRef.current = null;
+      return;
     }
-  }, [form, ignoreHistoryOps, debouncedSave]);
+
+    // Mark that we need to save these changes
+    if (!ignoreHistoryOps) {
+      historyPendingRef.current = true;
+    }
+
+    // Trigger save after a short delay
+    setTimeout(() => {
+      const currentValuesAfter = form.getValues();
+      const currentDirtyFields = form.formState.dirtyFields;
+
+      logger.debug("After undoLastSave, triggering save", {
+        values: currentValuesAfter,
+        dirtyFields: currentDirtyFields,
+      });
+
+      if (!ignoreHistoryOps) {
+        debouncedSave(currentValuesAfter as T, currentDirtyFields, true);
+      }
+
+      // Reset the operation ref
+      setTimeout(() => {
+        suppressRecordRef.current = null;
+        lastOpRef.current = null;
+      }, 100);
+    }, 100);
+  }, [form, ignoreHistoryOps, debouncedSave, logger]);
 
   const handleHydration = useCallback(
     (data: T) => {

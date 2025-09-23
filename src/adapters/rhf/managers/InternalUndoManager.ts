@@ -14,7 +14,7 @@ export class InternalUndoManager {
       value: unknown,
       shouldDirty?: boolean
     ) => void,
-    private getCurrentValues: () => Record<string, any>, // NEW: Get current form values
+    private getCurrentValues: () => Record<string, any>,
     private onHistoryApplied?: (
       entry: HistoryEntry,
       op: "undo" | "redo"
@@ -35,16 +35,27 @@ export class InternalUndoManager {
 
   record(entry: HistoryEntry): void {
     if (!entry.length) return;
+
+    // Add to past
     this.past.push(entry);
+
+    // Trim if too many entries
     if (this.maxEntries && this.past.length > this.maxEntries) {
       this.past.shift();
+      // Adjust checkpoints if we removed old entries
+      this.checkpoints = this.checkpoints
+        .map((cp) => cp - 1)
+        .filter((cp) => cp >= 0);
     }
-    this.future = []; // user change clears redo
+
+    // NOTE: We do NOT clear future here anymore
+    // clearFuture() should be called explicitly by the caller if needed
+
     this.lastOp = "user";
     this.notify();
   }
 
-  /** Explicit: allow callers to clear future on first sign of user input */
+  /** Clear future stack (called when user starts typing after undo) */
   clearFuture(): void {
     if (this.future.length) {
       this.future = [];
@@ -56,18 +67,24 @@ export class InternalUndoManager {
     const entry = this.past.pop();
     if (!entry) return false;
 
-    // NEW: Capture current state before undoing for redo
+    // Get current state BEFORE applying undo
     const currentValues = this.getCurrentValues();
+
+    // Build redo entry from current state
     const redoEntry: HistoryEntry = entry.map((patch) => ({
       name: patch.name,
-      prevValue: patch.nextValue, // What we're about to change FROM
-      nextValue: currentValues[patch.name] || patch.prevValue, // Current value
+      prevValue: patch.nextValue, // What we had (will undo from)
+      nextValue:
+        currentValues[patch.name] !== undefined
+          ? currentValues[patch.name]
+          : patch.nextValue, // Current value to restore on redo
       rootField: patch.rootField,
     }));
 
+    // Add to future stack for redo
     this.future.push(redoEntry);
 
-    // Apply the undo
+    // Apply the undo (restore previous values)
     for (const { name, prevValue } of entry) {
       this.setValue(name, prevValue, true);
     }
@@ -82,18 +99,24 @@ export class InternalUndoManager {
     const entry = this.future.pop();
     if (!entry) return false;
 
-    // NEW: Capture current state before redoing for undo
+    // Get current state BEFORE applying redo
     const currentValues = this.getCurrentValues();
+
+    // Build undo entry from current state
     const undoEntry: HistoryEntry = entry.map((patch) => ({
       name: patch.name,
-      prevValue: currentValues[patch.name] || patch.prevValue, // Current value
-      nextValue: patch.nextValue, // What we're about to change TO
+      prevValue:
+        currentValues[patch.name] !== undefined
+          ? currentValues[patch.name]
+          : patch.prevValue, // Current value to restore on undo
+      nextValue: patch.nextValue, // What we're about to set
       rootField: patch.rootField,
     }));
 
+    // Add to past stack for undo
     this.past.push(undoEntry);
 
-    // Apply the redo
+    // Apply the redo (restore next values)
     for (const { name, nextValue } of entry) {
       this.setValue(name, nextValue, true);
     }
@@ -108,12 +131,27 @@ export class InternalUndoManager {
     this.checkpoints.push(this.past.length);
   }
 
-  undoToLastCheckpoint(): void {
+  undoToLastCheckpoint(): boolean {
     const target = this.checkpoints.pop();
-    if (target === undefined) return;
-    while (this.past.length > target) {
-      if (!this.undo()) break; // Stop if we can't undo anymore
+    if (target === undefined) {
+      // No checkpoint found - undo everything
+      console.debug("[UndoManager] No checkpoint found, undoing all changes");
+      let undidSomething = false;
+      while (this.past.length > 0) {
+        if (!this.undo()) break;
+        undidSomething = true;
+      }
+      return undidSomething;
     }
+
+    // Undo until we reach the checkpoint
+    console.debug(`[UndoManager] Undoing to checkpoint at position ${target}`);
+    let undidSomething = false;
+    while (this.past.length > target) {
+      if (!this.undo()) break;
+      undidSomething = true;
+    }
+    return undidSomething;
   }
 
   canUndo(): boolean {
@@ -134,5 +172,14 @@ export class InternalUndoManager {
     this.lastOp = null;
     this.checkpoints = [];
     this.notify();
+  }
+
+  // Debug helper
+  getState(): { past: number; future: number; checkpoints: number[] } {
+    return {
+      past: this.past.length,
+      future: this.future.length,
+      checkpoints: [...this.checkpoints],
+    };
   }
 }

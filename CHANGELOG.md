@@ -2,6 +2,11 @@
 
 All notable changes to **react-hook-form-autosave** will be documented here.
 
+## [3.0.1] - 2024-09-23
+
+### Fixed
+- **undoLastSave**: Corrected checkpoint handling so that calling `undoLastSave` now reliably reverts all changes made since the last successful save.
+
 ## [3.0.0] - 2024-09-23
 
 ### 🎉 Major Release - Undo/Redo Support & Perfect State Synchronization

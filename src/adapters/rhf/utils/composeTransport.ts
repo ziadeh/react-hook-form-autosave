@@ -164,6 +164,9 @@ export function createComposedTransport({
         // Mark checkpoint for undo but keep history
         if (undoEnabled && undoMgrRef?.current) {
           undoMgrRef.current.markCheckpoint();
+          logger?.debug("Marked checkpoint after successful save", {
+            checkpointState: undoMgrRef.current.getState?.(),
+          });
         }
 
         onSaved?.(result, payload);
