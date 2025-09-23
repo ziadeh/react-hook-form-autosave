@@ -38,11 +38,7 @@ export class ConsoleLogger implements Logger {
   }
 }
 
-export function createLogger(namespace: string, enabled?: boolean): Logger {
-  const isDev =
-    (typeof process !== "undefined" &&
-      process.env?.NODE_ENV !== "production") ||
-    (typeof window !== "undefined" && (window as any).__DEV__ === true);
-
-  return new ConsoleLogger(namespace, enabled ?? isDev);
+export function createLogger(namespace: string, enabled = false): Logger {
+  // Default to false if not specified - no auto-detection
+  return new ConsoleLogger(namespace, enabled);
 }

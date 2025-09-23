@@ -1,4 +1,9 @@
-import type { Transport, SavePayload, SaveContext } from "../../../core/types";
+import type {
+  Transport,
+  SavePayload,
+  SaveContext,
+  SaveResult,
+} from "../../../core/types";
 import type { DiffHandler } from "./types";
 import { mapKeys, type KeyMap } from "../../../utils/mapKeys";
 import { datesToIso } from "./transforms";
@@ -21,7 +26,7 @@ interface ComposeTransportParams {
   undoAffectedFieldsRef?: { current: Set<string> };
   dispatch?: (action: any) => void;
   form?: any;
-  updateLastSavedState?: (values: any) => void; // NEW: Add this parameter
+  updateLastSavedState?: (values: any) => void;
 }
 
 export function createComposedTransport({
@@ -40,7 +45,7 @@ export function createComposedTransport({
   undoAffectedFieldsRef,
   dispatch,
   form,
-  updateLastSavedState, // NEW: Accept this parameter
+  updateLastSavedState,
 }: ComposeTransportParams): Transport {
   return async (payload: SavePayload, ctx?: SaveContext) => {
     const start = performance.now();
@@ -48,6 +53,7 @@ export function createComposedTransport({
 
     try {
       let remainingPayload = { ...payload };
+      const processedDiffMapFields: string[] = [];
 
       // diffMap handling (list add/remove via callbacks)
       if (diffMap && Object.keys(diffMap).length > 0) {
@@ -79,8 +85,15 @@ export function createComposedTransport({
             ops.push(() => Promise.resolve(handler.onAdd(item)));
           for (const item of removed)
             ops.push(() => Promise.resolve(handler.onRemove(item)));
-          if (ops.length) await Promise.all(ops.map((fn) => fn()));
 
+          // Execute diff operations
+          if (ops.length) {
+            await Promise.all(ops.map((fn) => fn()));
+          }
+
+          // Track processed fields even if no operations were needed
+          // (the field is still "saved" even if no changes)
+          processedDiffMapFields.push(key);
           delete (remainingPayload as any)[key];
         }
       }
@@ -93,31 +106,26 @@ export function createComposedTransport({
         finalPayload = mapPayload(finalPayload as any) as SavePayload;
       finalPayload = datesToIso(finalPayload);
 
-      if (Object.keys(finalPayload).length === 0) {
-        const duration = performance.now() - start;
-        dispatch?.({ type: "SAVE_SUCCESS", duration });
-        updateBaseline?.(payload);
-        metrics?.recordSave(duration, true);
+      // Determine if we only had diffMap operations
+      const onlyDiffMapOperations =
+        Object.keys(finalPayload).length === 0 &&
+        processedDiffMapFields.length > 0;
 
-        // NEW: Update last saved state
-        if (form && updateLastSavedState) {
-          const currentValues = form.getValues();
-          updateLastSavedState(currentValues);
-        }
-
-        onSaved?.({ ok: true as const }, payload);
-        // checkpoint on "no-op" payload still represents alignment with server
-        if (undoEnabled && undoMgrRef?.current) {
-          undoMgrRef.current.markCheckpoint();
-        }
-        return { ok: true as const };
+      // Execute main transport if there's a payload
+      let result: SaveResult;
+      if (Object.keys(finalPayload).length > 0) {
+        result = await baseTransport(finalPayload, ctx);
+      } else {
+        // No main payload, only diffMap operations succeeded
+        result = { ok: true } as SaveResult;
       }
 
-      const result = await baseTransport(finalPayload, ctx);
       const duration = performance.now() - start;
 
       if (result.ok) {
         dispatch?.({ type: "SAVE_SUCCESS", duration });
+
+        // Update baseline with ALL saved data (including diffMap fields)
         updateBaseline?.(payload);
         metrics?.recordSave(duration, true);
 
@@ -125,20 +133,31 @@ export function createComposedTransport({
         if (lastOpRef) lastOpRef.current = null;
         if (undoAffectedFieldsRef) undoAffectedFieldsRef.current.clear();
 
-        // Reset form dirty state without clearing undo history
+        // Update last saved state and reset form dirty state
         if (form) {
           const currentValues = form.getValues();
 
-          // NEW: Update last saved state BEFORE resetting form
+          // Update last saved state BEFORE resetting form
           if (updateLastSavedState) {
             updateLastSavedState(currentValues);
           }
 
+          // IMPORTANT: Reset form to clear dirty state for ALL saved fields
+          // This includes both regular fields and diffMap array fields
           form.reset(currentValues, {
             keepValues: true,
-            keepDirty: false,
+            keepDirty: false, // Clear ALL dirty flags
+            keepDirtyValues: false,
             keepTouched: true,
             keepErrors: false,
+            keepIsSubmitted: true,
+            keepSubmitCount: true,
+          });
+
+          logger?.debug("Reset form after successful save", {
+            regularFields: Object.keys(finalPayload),
+            diffMapFields: processedDiffMapFields,
+            onlyDiffMapOperations,
           });
         }
 

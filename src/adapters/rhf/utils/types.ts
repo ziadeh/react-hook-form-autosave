@@ -65,9 +65,8 @@ export interface RhfAutosaveOptions<T extends FieldValues> {
   mapPayload?: (payload: Record<string, any>) => Record<string, any>;
   validateBeforeSave?: ValidationMode;
   diffMap?: Record<string, DiffHandler>;
-  debug?: boolean;
   undo?: UndoOptions;
-  autoHydrate?: boolean; // NEW: enable/disable auto-hydration (default: true)
+  autoHydrate?: boolean; // Enable/disable auto-hydration (default: true)
 }
 
 export type ValidationMode = "none" | "payload" | "all";

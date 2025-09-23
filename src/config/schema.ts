@@ -3,13 +3,13 @@
 export type ConflictResolution = "client" | "server" | "merge";
 
 export interface AutosaveConfig {
+  debug: boolean; // Enable debug logging (default: false)
   debounceMs: number; // >= 0
   maxRetries: number; // >= 0
   enableMetrics: boolean;
   enableCache: boolean;
   cacheSize: number; // >= 1
   cacheTtlMs: number; // >= 1000
-  enableDebugLogs?: boolean;
   maxPayloadSize?: number; // any positive number; optional
   rateLimitMs: number; // >= 0
   offlineSupport: boolean;
@@ -17,13 +17,13 @@ export interface AutosaveConfig {
 }
 
 const DEFAULT_CONFIG: AutosaveConfig = {
+  debug: false, // Explicitly disabled by default
   debounceMs: 600,
   maxRetries: 3,
   enableMetrics: false,
   enableCache: true,
   cacheSize: 100,
   cacheTtlMs: 5 * 60 * 1000,
-  // enableDebugLogs: undefined,
   // maxPayloadSize: undefined,
   rateLimitMs: 0,
   offlineSupport: false,
@@ -80,6 +80,7 @@ export function createConfig(
   merged.rateLimitMs = assertNumber("rateLimitMs", merged.rateLimitMs, 0);
 
   // booleans
+  merged.debug = assertBoolean("debug", merged.debug);
   merged.enableMetrics = assertBoolean("enableMetrics", merged.enableMetrics);
   merged.enableCache = assertBoolean("enableCache", merged.enableCache);
   merged.offlineSupport = assertBoolean(
@@ -93,12 +94,6 @@ export function createConfig(
   );
 
   // optional fields (validate only if provided)
-  if (input.enableDebugLogs !== undefined) {
-    merged.enableDebugLogs = assertBoolean(
-      "enableDebugLogs",
-      input.enableDebugLogs
-    );
-  }
   if (input.maxPayloadSize !== undefined) {
     merged.maxPayloadSize = assertNumber(
       "maxPayloadSize",

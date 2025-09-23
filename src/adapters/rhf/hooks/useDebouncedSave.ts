@@ -242,41 +242,78 @@ export function useDebouncedSave<T extends FieldValues>({
 
   const forceSave = useCallback(async () => {
     logger.debug("Force save requested");
+
+    // Cancel any pending debounce
     clearDebounceTimeout();
 
-    const currentValues = form.getValues() as any;
-    let currentPayload: SavePayload = {};
+    // Clear pending payload tracking
+    clearPendingPayload();
+
+    // Get current form values
+    const currentValues = form.getValues() as T;
+
+    // Check if we already match the baseline (nothing to save)
+    if (equalsBaseline(currentValues)) {
+      logger.debug("Force save - already in sync with baseline");
+      setHistoryPending(false);
+      setNoPendingGuard(true);
+      return { ok: true } as const;
+    }
+
+    // Build payload of what changed
+    let payloadToSave: SavePayload = {};
 
     if (baselineRef.current) {
+      // Compare with baseline to find changes
       for (const key of Object.keys(currentValues)) {
-        if (!deepEqual(currentValues[key], baselineRef.current[key])) {
-          (currentPayload as any)[key] = currentValues[key];
+        if (!deepEqual((currentValues as any)[key], baselineRef.current[key])) {
+          (payloadToSave as any)[key] = (currentValues as any)[key];
         }
       }
+    } else {
+      // No baseline yet, save everything
+      payloadToSave = currentValues as SavePayload;
     }
 
-    if (Object.keys(currentPayload).length > 0) {
-      manager.queueChange(currentPayload);
-      clearPendingPayload();
-      const res = await manager.flush();
+    // Check if we have anything to save
+    if (Object.keys(payloadToSave).length === 0) {
+      logger.debug("Force save - no changes detected");
       setHistoryPending(false);
+      setNoPendingGuard(true);
+      return { ok: true } as const;
+    }
 
+    logger.debug("Force save executing", {
+      payloadKeys: Object.keys(payloadToSave),
+      payload: payloadToSave,
+    });
+
+    // Queue and flush immediately
+    manager.queueChange(payloadToSave);
+    const result = await manager.flush();
+
+    // Update state after save
+    setHistoryPending(false);
+
+    if (result.ok) {
       // Update last saved state on successful save
-      if (res.ok && updateLastSavedState) {
+      if (updateLastSavedState) {
         updateLastSavedState(currentValues);
       }
-
-      return res;
+      setNoPendingGuard(true);
     }
-    return { ok: true } as const;
+
+    return result;
   }, [
     logger,
     clearDebounceTimeout,
+    clearPendingPayload,
     form,
+    equalsBaseline,
     baselineRef,
     manager,
-    clearPendingPayload,
     setHistoryPending,
+    setNoPendingGuard,
     updateLastSavedState,
   ]);
 

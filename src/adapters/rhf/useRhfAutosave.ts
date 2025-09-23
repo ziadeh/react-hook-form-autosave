@@ -49,7 +49,6 @@ export function useRhfAutosave<T extends FieldValues>(
     mapPayload,
     validateBeforeSave = "payload",
     diffMap,
-    debug,
     undo,
     autoHydrate = true,
   } = options;
@@ -62,14 +61,17 @@ export function useRhfAutosave<T extends FieldValues>(
   const validationCache = useMemo(() => new ValidationCache(), []);
   const payloadCache = useMemo(() => new PayloadCache(), []);
   const metrics = useMemo(() => new MetricsCollector(), []);
-  const logger = useMemo(() => createLogger("rhf", debug), [debug]);
+  const logger = useMemo(
+    () => createLogger("rhf", config.debug),
+    [config.debug]
+  );
 
   // Get form state
   const values = form.watch();
   const { isDirty, isValid, dirtyFields, isValidating } = form.formState;
 
   // Initialize baseline management
-  const baseline = useBaseline(form, diffMap, undoEnabled, debug);
+  const baseline = useBaseline(form, diffMap, undoEnabled, config.debug);
 
   // Initialize autosave manager FIRST (with dummy transport, will be updated)
   const manager = useMemo(
@@ -88,7 +90,7 @@ export function useRhfAutosave<T extends FieldValues>(
     manager,
     baseline.equalsBaseline,
     ignoreHistoryOps,
-    debug
+    config.debug
   );
 
   // Initialize effective dirty fields getter
@@ -193,7 +195,7 @@ export function useRhfAutosave<T extends FieldValues>(
     baseline.equalsBaseline,
     debouncedSaveHook.debouncedSave,
     shouldSave,
-    debug,
+    config.debug,
     {
       updateBaseline: baseline.initializeBaseline,
       updateLastSavedState: pendingState.updateLastSavedState,
@@ -281,7 +283,7 @@ export function useRhfAutosave<T extends FieldValues>(
     hasPendingChanges: pendingState.computeHasPendingChanges(),
 
     // Actions
-    flush: pendingState.flush,
+    flush: debouncedSaveHook.forceSave, // flush and forceSave are the same
     abort: pendingState.abort,
     forceSave: debouncedSaveHook.forceSave,
 
