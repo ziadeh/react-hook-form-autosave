@@ -2,6 +2,11 @@
 
 All notable changes to **react-hook-form-autosave** will be documented here.
 
+## [3.0.2] - 2024-09-23
+
+### Changed
+- Documentation polish in README intro section.
+
 ## [3.0.1] - 2024-09-23
 
 ### Fixed

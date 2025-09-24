@@ -6,6 +6,10 @@
 
 **Effortless autosave for React Hook Form with smart field tracking, undo/redo, and perfect synchronization.**
 
+<img src="https://raw.githubusercontent.com/ziadeh/react-hook-form-autosave/main/assets/logo.jpg" alt="React Hook Form Autosave logo"/>
+
+![Demo](https://raw.githubusercontent.com/ziadeh/react-hook-form-autosave/main/assets/demo.gif)
+
 ```tsx
 const { isSaving, hasPendingChanges, undo, redo } = useRhfAutosave({
   form,
@@ -350,9 +354,6 @@ function MyForm() {
     if (hasPendingChanges) {
       await flush();
     }
-    
-    // Then do final submission
-    await submitForm(data);
   };
 
   return (
