@@ -117,6 +117,23 @@ export class InternalUndoManager {
     return true;
   }
 
+  /**
+   * Remove the last entry from history without applying it.
+   * Used when a save operation fails and we want to remove the
+   * optimistic change from history without reverting the form
+   * (since we'll revert the form separately).
+   */
+  undoWithoutApplying(): boolean {
+    const entry = this.past.pop();
+    if (!entry) return false;
+
+    // Don't apply the undo, just remove it from history
+    // The form will be reverted separately by the transport layer
+
+    this.notify();
+    return true;
+  }
+
   markCheckpoint(): void {
     this.checkpoints.push(this.past.length);
   }

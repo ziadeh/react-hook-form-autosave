@@ -27,6 +27,7 @@ interface ComposeTransportParams {
   dispatch?: (action: any) => void;
   form?: any;
   updateLastSavedState?: (values: any) => void;
+  isHydratingRef?: { current: boolean };
 }
 
 export function createComposedTransport({
@@ -46,6 +47,7 @@ export function createComposedTransport({
   dispatch,
   form,
   updateLastSavedState,
+  isHydratingRef,
 }: ComposeTransportParams): Transport {
   return async (payload: SavePayload, ctx?: SaveContext) => {
     const start = performance.now();
@@ -55,7 +57,12 @@ export function createComposedTransport({
       let remainingPayload = { ...payload };
       const processedDiffMapFields: string[] = [];
       const failedDiffMapFields: string[] = [];
-      let diffMapErrors: Error[] = [];
+      const diffMapErrorDetails: Array<{
+        field: string;
+        operation: "add" | "remove";
+        error: Error;
+        itemId: string | number;
+      }> = [];
 
       // diffMap handling (list add/remove via callbacks)
       if (diffMap && Object.keys(diffMap).length > 0) {
@@ -97,13 +104,14 @@ export function createComposedTransport({
               hasErrors = true;
               const err =
                 error instanceof Error ? error : new Error(String(error));
-              diffMapErrors.push(
-                new Error(
-                  `Failed to add ${handler.idOf(item)} to ${key}: ${
-                    err.message
-                  }`
-                )
-              );
+
+              diffMapErrorDetails.push({
+                field: key,
+                operation: "add",
+                error: err,
+                itemId: handler.idOf(item),
+              });
+
               logger?.error(`Failed to add item to ${key}:`, err, {
                 item: handler.idOf(item),
               });
@@ -122,13 +130,14 @@ export function createComposedTransport({
               hasErrors = true;
               const err =
                 error instanceof Error ? error : new Error(String(error));
-              diffMapErrors.push(
-                new Error(
-                  `Failed to remove ${handler.idOf(item)} from ${key}: ${
-                    err.message
-                  }`
-                )
-              );
+
+              diffMapErrorDetails.push({
+                field: key,
+                operation: "remove",
+                error: err,
+                itemId: handler.idOf(item),
+              });
+
               logger?.error(`Failed to remove item from ${key}:`, err, {
                 item: handler.idOf(item),
               });
@@ -154,12 +163,15 @@ export function createComposedTransport({
 
       // If we have diffMap errors and no main payload to save, fail immediately
       if (
-        diffMapErrors.length > 0 &&
+        diffMapErrorDetails.length > 0 &&
         Object.keys(remainingPayload).length === 0
       ) {
         const combinedError = new Error(
-          `DiffMap operations failed: ${diffMapErrors
-            .map((e) => e.message)
+          `DiffMap operations failed: ${diffMapErrorDetails
+            .map(
+              (detail) =>
+                `${detail.field}.${detail.operation}(${detail.itemId}): ${detail.error.message}`
+            )
             .join("; ")}`
         );
 
@@ -167,7 +179,12 @@ export function createComposedTransport({
         dispatch?.({ type: "SAVE_ERROR", error: combinedError, duration });
         metrics?.recordSave(duration, false);
 
-        const failureResult = { ok: false, error: combinedError } as SaveResult;
+        const failureResult = {
+          ok: false,
+          error: combinedError,
+          failedFields: failedDiffMapFields,
+          diffMapErrors: diffMapErrorDetails,
+        } as SaveResult;
         onSaved?.(failureResult, payload);
         return failureResult;
       }
@@ -199,30 +216,48 @@ export function createComposedTransport({
       } else {
         // No main payload, only diffMap operations
         // Success depends on whether diffMap operations succeeded
-        if (diffMapErrors.length > 0) {
+        if (diffMapErrorDetails.length > 0) {
           const combinedError = new Error(
-            `DiffMap operations failed: ${diffMapErrors
-              .map((e) => e.message)
+            `DiffMap operations failed: ${diffMapErrorDetails
+              .map(
+                (detail) =>
+                  `${detail.field}.${detail.operation}(${detail.itemId}): ${detail.error.message}`
+              )
               .join("; ")}`
           );
-          result = { ok: false, error: combinedError } as SaveResult;
+          result = {
+            ok: false,
+            error: combinedError,
+            failedFields: failedDiffMapFields,
+            diffMapErrors: diffMapErrorDetails,
+          } as SaveResult;
         } else {
           result = { ok: true } as SaveResult;
         }
       }
 
       // If main transport succeeded but we had diffMap errors, treat as partial failure
-      if (result.ok && diffMapErrors.length > 0) {
+      if (result.ok && diffMapErrorDetails.length > 0) {
         const combinedError = new Error(
-          `Partial save failure - DiffMap operations failed: ${diffMapErrors
-            .map((e) => e.message)
+          `Partial save failure - DiffMap operations failed: ${diffMapErrorDetails
+            .map(
+              (detail) =>
+                `${detail.field}.${detail.operation}(${detail.itemId}): ${detail.error.message}`
+            )
             .join("; ")}`
         );
-        result = { ok: false, error: combinedError } as SaveResult;
+        result = {
+          ok: false,
+          error: combinedError,
+          failedFields: failedDiffMapFields,
+          diffMapErrors: diffMapErrorDetails,
+        } as SaveResult;
         logger?.warn("Main transport succeeded but diffMap operations failed", {
           succeededMainFields: Object.keys(finalPayload),
           failedDiffMapFields,
-          errors: diffMapErrors.map((e) => e.message),
+          errors: diffMapErrorDetails.map(
+            (d) => `${d.field}.${d.operation}(${d.itemId}): ${d.error.message}`
+          ),
         });
       }
 
@@ -302,8 +337,91 @@ export function createComposedTransport({
 
         onSaved?.(result, payload);
       } else {
+        // FAILURE CASE: Revert failed diffMap fields and clean up undo history
         dispatch?.({ type: "SAVE_ERROR", error: result.error, duration });
         metrics?.recordSave(duration, false);
+
+        // If we have diffMap errors, revert those fields to their baseline values
+        if (form && baselineRef?.current && diffMapErrorDetails.length > 0) {
+          logger?.debug("Reverting failed diffMap fields to baseline", {
+            failedFields: failedDiffMapFields,
+            baseline: baselineRef.current,
+          });
+
+          // Signal that we're reverting (to suppress undo recording)
+          if (lastOpRef) {
+            lastOpRef.current = "revert";
+          }
+          if (isHydratingRef) {
+            isHydratingRef.current = true;
+          }
+
+          // Group errors by field to revert each field only once
+          const fieldsToRevert = new Set(
+            diffMapErrorDetails.map((detail) => detail.field)
+          );
+
+          fieldsToRevert.forEach((field) => {
+            try {
+              const baselineValue = baselineRef.current?.[field];
+              const currentValue = form.getValues(field as any);
+
+              // Only revert if the value has actually changed from baseline
+              if (
+                baselineValue !== undefined &&
+                JSON.stringify(currentValue) !== JSON.stringify(baselineValue)
+              ) {
+                logger?.debug(`Reverting field ${field} to baseline`, {
+                  currentValue,
+                  baselineValue,
+                });
+
+                // Revert the field value
+                form.setValue(field as any, baselineValue, {
+                  shouldDirty: false,
+                  shouldTouch: false,
+                  shouldValidate: false,
+                });
+              }
+            } catch (e) {
+              logger?.error(
+                `Failed to revert field ${field}`,
+                e instanceof Error ? e : new Error(String(e))
+              );
+            }
+          });
+
+          // Remove the undo entry that was created for this failed change
+          // since the change never actually succeeded
+          if (undoEnabled && undoMgrRef?.current) {
+            // Check if we have any undo history to remove
+            const state = undoMgrRef.current.getState();
+            if (state.past > 0) {
+              // Remove the last entry from the past stack since it represents
+              // a change that failed to save
+              logger?.debug("Removing failed change from undo history", {
+                stateBefore: state,
+              });
+
+              undoMgrRef.current.undoWithoutApplying();
+
+              logger?.debug("Removed failed change from undo history", {
+                stateAfter: undoMgrRef.current.getState(),
+              });
+            }
+          }
+
+          // Clear the revert flag after a short delay
+          setTimeout(() => {
+            if (lastOpRef) {
+              lastOpRef.current = null;
+            }
+            if (isHydratingRef) {
+              isHydratingRef.current = false;
+            }
+          }, 100);
+        }
+
         onSaved?.(result, payload);
       }
 
