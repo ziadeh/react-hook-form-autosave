@@ -54,6 +54,8 @@ export function createComposedTransport({
     try {
       let remainingPayload = { ...payload };
       const processedDiffMapFields: string[] = [];
+      const failedDiffMapFields: string[] = [];
+      let diffMapErrors: Error[] = [];
 
       // diffMap handling (list add/remove via callbacks)
       if (diffMap && Object.keys(diffMap).length > 0) {
@@ -80,22 +82,94 @@ export function createComposedTransport({
             removed: removed.map(handler.idOf),
           });
 
-          const ops: Array<() => Promise<void>> = [];
-          for (const item of added)
-            ops.push(() => Promise.resolve(handler.onAdd(item)));
-          for (const item of removed)
-            ops.push(() => Promise.resolve(handler.onRemove(item)));
+          // Execute diff operations and handle errors properly
+          let hasErrors = false;
 
-          // Execute diff operations
-          if (ops.length) {
-            await Promise.all(ops.map((fn) => fn()));
+          // Handle additions
+          for (const item of added) {
+            try {
+              await Promise.resolve(handler.onAdd(item));
+              logger?.debug(
+                `Successfully added item to ${key}:`,
+                handler.idOf(item)
+              );
+            } catch (error) {
+              hasErrors = true;
+              const err =
+                error instanceof Error ? error : new Error(String(error));
+              diffMapErrors.push(
+                new Error(
+                  `Failed to add ${handler.idOf(item)} to ${key}: ${
+                    err.message
+                  }`
+                )
+              );
+              logger?.error(`Failed to add item to ${key}:`, err, {
+                item: handler.idOf(item),
+              });
+            }
           }
 
-          // Track processed fields even if no operations were needed
-          // (the field is still "saved" even if no changes)
-          processedDiffMapFields.push(key);
-          delete (remainingPayload as any)[key];
+          // Handle removals
+          for (const item of removed) {
+            try {
+              await Promise.resolve(handler.onRemove(item));
+              logger?.debug(
+                `Successfully removed item from ${key}:`,
+                handler.idOf(item)
+              );
+            } catch (error) {
+              hasErrors = true;
+              const err =
+                error instanceof Error ? error : new Error(String(error));
+              diffMapErrors.push(
+                new Error(
+                  `Failed to remove ${handler.idOf(item)} from ${key}: ${
+                    err.message
+                  }`
+                )
+              );
+              logger?.error(`Failed to remove item from ${key}:`, err, {
+                item: handler.idOf(item),
+              });
+            }
+          }
+
+          // Only mark as processed if no errors occurred
+          if (hasErrors) {
+            failedDiffMapFields.push(key);
+            // Keep the field in remainingPayload so the main transport can see it
+            logger?.warn(
+              `DiffMap operations failed for field ${key}, keeping in payload`
+            );
+          } else {
+            processedDiffMapFields.push(key);
+            delete (remainingPayload as any)[key];
+            logger?.debug(
+              `DiffMap operations succeeded for field ${key}, removed from payload`
+            );
+          }
         }
+      }
+
+      // If we have diffMap errors and no main payload to save, fail immediately
+      if (
+        diffMapErrors.length > 0 &&
+        Object.keys(remainingPayload).length === 0
+      ) {
+        const combinedError = new Error(
+          `DiffMap operations failed: ${diffMapErrors
+            .map((e) => e.message)
+            .join("; ")}`
+        );
+
+        const duration = performance.now() - start;
+        dispatch?.({ type: "SAVE_ERROR", error: combinedError, duration });
+        metrics?.recordSave(duration, false);
+
+        const failureResult = { ok: false, error: combinedError } as SaveResult;
+        onSaved?.(failureResult, payload);
+        return failureResult;
       }
 
       // Key transforms and mapping
@@ -106,18 +180,50 @@ export function createComposedTransport({
         finalPayload = mapPayload(finalPayload as any) as SavePayload;
       finalPayload = datesToIso(finalPayload);
 
-      // Determine if we only had diffMap operations
-      const onlyDiffMapOperations =
-        Object.keys(finalPayload).length === 0 &&
-        processedDiffMapFields.length > 0;
-
       // Execute main transport if there's a payload
       let result: SaveResult;
       if (Object.keys(finalPayload).length > 0) {
         result = await baseTransport(finalPayload, ctx);
+
+        // If main transport failed, but we had successful diffMap operations,
+        // we need to decide how to handle this. For now, treat as overall failure.
+        if (!result.ok && processedDiffMapFields.length > 0) {
+          logger?.warn(
+            "Main transport failed but diffMap operations succeeded",
+            {
+              failedMainFields: Object.keys(finalPayload),
+              succeededDiffMapFields: processedDiffMapFields,
+            }
+          );
+        }
       } else {
-        // No main payload, only diffMap operations succeeded
-        result = { ok: true } as SaveResult;
+        // No main payload, only diffMap operations
+        // Success depends on whether diffMap operations succeeded
+        if (diffMapErrors.length > 0) {
+          const combinedError = new Error(
+            `DiffMap operations failed: ${diffMapErrors
+              .map((e) => e.message)
+              .join("; ")}`
+          );
+          result = { ok: false, error: combinedError } as SaveResult;
+        } else {
+          result = { ok: true } as SaveResult;
+        }
+      }
+
+      // If main transport succeeded but we had diffMap errors, treat as partial failure
+      if (result.ok && diffMapErrors.length > 0) {
+        const combinedError = new Error(
+          `Partial save failure - DiffMap operations failed: ${diffMapErrors
+            .map((e) => e.message)
+            .join("; ")}`
+        );
+        result = { ok: false, error: combinedError } as SaveResult;
+        logger?.warn("Main transport succeeded but diffMap operations failed", {
+          succeededMainFields: Object.keys(finalPayload),
+          failedDiffMapFields,
+          errors: diffMapErrors.map((e) => e.message),
+        });
       }
 
       const duration = performance.now() - start;
@@ -125,8 +231,14 @@ export function createComposedTransport({
       if (result.ok) {
         dispatch?.({ type: "SAVE_SUCCESS", duration });
 
-        // Update baseline with ALL saved data (including diffMap fields)
-        updateBaseline?.(payload);
+        // Update baseline only with successfully saved data
+        const successfulPayload = { ...payload };
+        // Remove failed diffMap fields from baseline update
+        failedDiffMapFields.forEach((field) => {
+          delete (successfulPayload as any)[field];
+        });
+
+        updateBaseline?.(successfulPayload);
         metrics?.recordSave(duration, true);
 
         // Clear the current operation state
@@ -142,22 +254,41 @@ export function createComposedTransport({
             updateLastSavedState(currentValues);
           }
 
-          // IMPORTANT: Reset form to clear dirty state for ALL saved fields
-          // This includes both regular fields and diffMap array fields
-          form.reset(currentValues, {
+          // Reset form to clear dirty state for successfully saved fields only
+          // For failed diffMap fields, keep them dirty so user knows they need attention
+          const resetOptions = {
             keepValues: true,
-            keepDirty: false, // Clear ALL dirty flags
+            keepDirty: failedDiffMapFields.length > 0, // Keep dirty if we have failures
             keepDirtyValues: false,
             keepTouched: true,
             keepErrors: false,
             keepIsSubmitted: true,
             keepSubmitCount: true,
-          });
+          };
 
-          logger?.debug("Reset form after successful save", {
+          form.reset(currentValues, resetOptions);
+
+          // If we had failed diffMap fields, manually mark them as dirty
+          if (failedDiffMapFields.length > 0) {
+            failedDiffMapFields.forEach((field) => {
+              try {
+                form.setValue(field, form.getValues(field), {
+                  shouldDirty: true,
+                });
+              } catch (e) {
+                logger?.warn(
+                  `Could not mark failed field ${field} as dirty`,
+                  e
+                );
+              }
+            });
+          }
+
+          logger?.debug("Reset form after save", {
             regularFields: Object.keys(finalPayload),
-            diffMapFields: processedDiffMapFields,
-            onlyDiffMapOperations,
+            succeededDiffMapFields: processedDiffMapFields,
+            failedDiffMapFields,
+            resetOptions,
           });
         }
 
@@ -182,7 +313,9 @@ export function createComposedTransport({
       const err = e instanceof Error ? e : new Error(String(e));
       dispatch?.({ type: "SAVE_ERROR", error: err, duration });
       metrics?.recordSave(duration, false);
-      return { ok: false, error: err };
+      const failureResult = { ok: false, error: err };
+      onSaved?.(failureResult, payload);
+      return failureResult;
     }
   };
 }

@@ -57,7 +57,7 @@ export function useUndoRedo<T extends FieldValues>(
   const noPendingGuardRef = useRef(false);
 
   // Rerender when undo stack changes (so canUndo/canRedo stay live)
-  const [, forceUndoRender] = useReducer((x) => x + 1, 0);
+  const [undoRenderTrigger, forceUndoRender] = useReducer((x) => x + 1, 0);
 
   const values = form.watch();
 
@@ -65,7 +65,7 @@ export function useUndoRedo<T extends FieldValues>(
   const updateBaselineAfterHistory = useCallback(
     (_entry: any, op: "undo" | "redo") => {
       logger.debug(
-        `History applied (${op}) — baseline unchanged (server state)`
+        `History applied (${op}) â€” baseline unchanged (server state)`
       );
     },
     [logger]
@@ -148,24 +148,28 @@ export function useUndoRedo<T extends FieldValues>(
       return;
     }
 
-    // Skip recording while hydrating or applying history ops
-    if (
-      isHydratingRef.current ||
-      suppressRecordRef.current === "undo" ||
-      suppressRecordRef.current === "redo" ||
-      suppressRecordRef.current === "hydrate"
-    ) {
-      // Clear suppress flag after a delay to ensure operation completes
-      if (
-        suppressRecordRef.current === "undo" ||
-        suppressRecordRef.current === "redo"
-      ) {
-        // Keep the suppress flag longer for history operations
-        // This prevents recording the change that the undo/redo itself makes
-      } else {
-        suppressRecordRef.current = null;
-      }
+    // Skip recording while hydrating
+    if (isHydratingRef.current) {
       lastValuesRef.current = values;
+      return;
+    }
+
+    // If we're in the middle of applying an undo/redo operation, skip recording
+    // but clear the suppress flag so future changes can be recorded
+    if (
+      suppressRecordRef.current === "undo" ||
+      suppressRecordRef.current === "redo"
+    ) {
+      lastValuesRef.current = values;
+      // Clear suppress flag after this effect to allow next change to be recorded
+      suppressRecordRef.current = null;
+      return;
+    }
+
+    // Skip hydrate operations
+    if (suppressRecordRef.current === "hydrate") {
+      lastValuesRef.current = values;
+      suppressRecordRef.current = null;
       return;
     }
 
@@ -177,25 +181,19 @@ export function useUndoRedo<T extends FieldValues>(
     const patches = diffToPatches(prev, next, "");
 
     if (patches.length) {
+      // CRITICAL: If we can redo AND we have patches, this is a new user change after undo,
+      // so we MUST clear the future stack (the redo history) BEFORE any other checks
+      if (mgr.canRedo()) {
+        logger.debug("Clearing redo stack due to new user change after undo", {
+          futureLength: mgr.getState().future,
+        });
+        mgr.clearFuture();
+      }
+
       // De-dupe identical logical state (StrictMode)
       const nextSig = stableStringify(next as any);
       if (nextSig !== lastRecordedValuesSigRef.current) {
-        // This is a real change
-
-        // Only clear future if:
-        // 1. We have a future stack (user had undone something)
-        // 2. This is a NEW user change (not from undo/redo)
-        // 3. The last operation was not undo/redo
-        if (
-          mgr.canRedo() &&
-          lastOpRef.current !== "undo" &&
-          lastOpRef.current !== "redo"
-        ) {
-          logger.debug("Clearing redo stack due to new user change");
-          mgr.clearFuture();
-        }
-
-        // Record the change
+        // This is a real change from the user - record it
         mgr.record(patches);
         lastOpRef.current = "user";
         lastRecordedValuesSigRef.current = nextSig;
@@ -206,6 +204,11 @@ export function useUndoRedo<T extends FieldValues>(
           canUndo: mgr.canUndo(),
           canRedo: mgr.canRedo(),
           state: mgr.getState(),
+        });
+      } else {
+        logger.debug("Skipping duplicate change (same signature)", {
+          nextSig,
+          lastRecordedSig: lastRecordedValuesSigRef.current,
         });
       }
     }
@@ -544,7 +547,13 @@ export function useUndoRedo<T extends FieldValues>(
       canUndo: mgr.canUndo(),
       canRedo: mgr.canRedo(),
     };
-  }, [undoEnabled, executeUndo, executeRedo, executeUndoLastSave]);
+  }, [
+    undoEnabled,
+    executeUndo,
+    executeRedo,
+    executeUndoLastSave,
+    undoRenderTrigger,
+  ]);
 
   const hydrateFromServer = useCallback(
     (data: T) => {
