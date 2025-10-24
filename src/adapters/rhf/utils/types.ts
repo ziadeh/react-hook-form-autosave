@@ -7,7 +7,7 @@ import type { AutosaveConfig } from "../../../config/schema";
 /* ============================= Undo/Redo Types ============================= */
 
 export type FieldPath = string;
-export type UndoOp = "user" | "undo" | "redo" | "hydrate" | null;
+export type UndoOp = "user" | "undo" | "redo" | "hydrate" | "revert" | null;
 
 export interface Patch {
   name: FieldPath;

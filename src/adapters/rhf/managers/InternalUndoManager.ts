@@ -127,6 +127,16 @@ export class InternalUndoManager {
     return true;
   }
 
+  /** Remove the last entry from past without applying it (useful when a change fails to save) */
+  undoWithoutApplying(): boolean {
+    const entry = this.past.pop();
+    if (!entry) return false;
+
+    this.lastOp = null;
+    this.notify();
+    return true;
+  }
+
   markCheckpoint(): void {
     this.checkpoints.push(this.past.length);
   }
