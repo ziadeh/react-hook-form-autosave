@@ -130,47 +130,7 @@ export function useRhfAutosave<T extends FieldValues>(
     );
   }, [userShouldSave, getEffectiveDirtyFields, baseline.baselineRef]);
 
-  // Create composed transport with updateLastSavedState
-  const composedTransport = useMemo(
-    () =>
-      createComposedTransport({
-        baseTransport,
-        diffMap,
-        keyMap,
-        mapPayload,
-        updateBaseline: baseline.updateBaseline,
-        undoEnabled,
-        onSaved,
-        metrics,
-        logger,
-        baselineRef: baseline.baselineRef,
-        dispatch,
-        form,
-        updateLastSavedState: pendingState.updateLastSavedState,
-      }),
-    [
-      baseTransport,
-      diffMap,
-      keyMap,
-      mapPayload,
-      baseline.updateBaseline,
-      undoEnabled,
-      onSaved,
-      metrics,
-      logger,
-      baseline.baselineRef,
-      form,
-      pendingState.updateLastSavedState,
-      dispatch,
-    ]
-  );
-
-  // Update manager's transport to use the composed one
-  useEffect(() => {
-    (manager as any).transport = composedTransport;
-  }, [manager, composedTransport]);
-
-  // Initialize debounced save
+  // Initialize debounced save (needs to be before undo/redo)
   const debouncedSaveHook = useDebouncedSave({
     form,
     manager,
@@ -201,6 +161,56 @@ export function useRhfAutosave<T extends FieldValues>(
       updateLastSavedState: pendingState.updateLastSavedState,
     }
   );
+
+  // Create composed transport with all refs (needs to be after undo/redo for refs)
+  const composedTransport = useMemo(
+    () =>
+      createComposedTransport({
+        baseTransport,
+        diffMap,
+        keyMap,
+        mapPayload,
+        updateBaseline: baseline.updateBaseline,
+        undoEnabled,
+        undoMgrRef: undoRedo.undoMgrRef,
+        onSaved,
+        metrics,
+        logger,
+        baselineRef: baseline.baselineRef,
+        lastOpRef: undoRedo.lastOpRef,
+        undoAffectedFieldsRef: undoRedo.undoAffectedFieldsRef,
+        dispatch,
+        form,
+        updateLastSavedState: pendingState.updateLastSavedState,
+        isHydratingRef: undoRedo.isHydratingRef,
+        clearDebounceTimeout: pendingState.clearDebounceTimeout,
+      }),
+    [
+      baseTransport,
+      diffMap,
+      keyMap,
+      mapPayload,
+      baseline.updateBaseline,
+      undoEnabled,
+      undoRedo.undoMgrRef,
+      onSaved,
+      metrics,
+      logger,
+      baseline.baselineRef,
+      undoRedo.lastOpRef,
+      undoRedo.undoAffectedFieldsRef,
+      form,
+      pendingState.updateLastSavedState,
+      undoRedo.isHydratingRef,
+      pendingState.clearDebounceTimeout,
+      dispatch,
+    ]
+  );
+
+  // Update manager's transport to use the composed one
+  useEffect(() => {
+    (manager as any).transport = composedTransport;
+  }, [manager, composedTransport]);
 
   // Now connect the lastOpRef to the selectPayload and shouldSave
   const finalSelectPayload = useMemo(() => {

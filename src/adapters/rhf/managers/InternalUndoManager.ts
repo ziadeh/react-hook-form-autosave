@@ -67,12 +67,17 @@ export class InternalUndoManager {
     const entry = this.past.pop();
     if (!entry) return false;
 
-    // Build redo entry BEFORE applying changes
-    // The redo entry should restore what we're about to change
+    // Get current state BEFORE applying undo
+    const currentValues = this.getCurrentValues();
+
+    // Build redo entry from current state
     const redoEntry: HistoryEntry = entry.map((patch) => ({
       name: patch.name,
-      prevValue: patch.prevValue, // Where we're going (after undo)
-      nextValue: patch.nextValue, // Where we are now (before undo)
+      prevValue: patch.nextValue, // What we had (will undo from)
+      nextValue:
+        currentValues[patch.name] !== undefined
+          ? currentValues[patch.name]
+          : patch.nextValue, // Current value to restore on redo
       rootField: patch.rootField,
     }));
 
@@ -94,12 +99,17 @@ export class InternalUndoManager {
     const entry = this.future.pop();
     if (!entry) return false;
 
-    // Build undo entry BEFORE applying changes
-    // The undo entry should restore what we're about to change
+    // Get current state BEFORE applying redo
+    const currentValues = this.getCurrentValues();
+
+    // Build undo entry from current state
     const undoEntry: HistoryEntry = entry.map((patch) => ({
       name: patch.name,
-      prevValue: patch.prevValue, // Where we are now (before redo)
-      nextValue: patch.nextValue, // Where we're going (after redo)
+      prevValue:
+        currentValues[patch.name] !== undefined
+          ? currentValues[patch.name]
+          : patch.prevValue, // Current value to restore on undo
+      nextValue: patch.nextValue, // What we're about to set
       rootField: patch.rootField,
     }));
 
@@ -117,19 +127,12 @@ export class InternalUndoManager {
     return true;
   }
 
-  /**
-   * Remove the last entry from history without applying it.
-   * Used when a save operation fails and we want to remove the
-   * optimistic change from history without reverting the form
-   * (since we'll revert the form separately).
-   */
+  /** Remove the last entry from past without applying it (useful when a change fails to save) */
   undoWithoutApplying(): boolean {
     const entry = this.past.pop();
     if (!entry) return false;
 
-    // Don't apply the undo, just remove it from history
-    // The form will be reverted separately by the transport layer
-
+    this.lastOp = null;
     this.notify();
     return true;
   }

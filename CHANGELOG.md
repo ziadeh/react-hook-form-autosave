@@ -2,6 +2,73 @@
 
 All notable changes to **react-hook-form-autosave** will be documented here.
 
+## [3.0.3] - 2024-10-24
+
+### Fixed
+
+#### Undo/Redo & Optimistic Updates
+
+- **Fixed false positive pending changes detection**: Resolved issue where `hasPendingChanges` would incorrectly return `true` even when form values matched the last saved state. The hook now maintains a `lastSavedStateRef` to accurately track successfully saved values independently of React Hook Form's dirty state.
+
+- **Fixed form dirty state persistence after save**: Corrected behavior where form would remain marked as dirty after successful save operations. The system now properly resets form state while preserving values and handling partial save failures in diffMap operations.
+
+- **Fixed baseline desynchronization during hydration**: Resolved issue where baseline and last saved state could become out of sync during form hydration. Both states are now updated atomically during auto-hydration and manual hydration operations.
+
+- **Fixed undo/redo not updating saved state**: Corrected behavior where undo/redo operations wouldn't update the last saved state, causing incorrect pending change detection. History operations now properly update both baseline and saved state tracking.
+
+### Enhanced
+
+#### State Management
+
+- **Enhanced auto-hydration detection**: Improved automatic detection of form hydration events by analyzing form state transitions (dirty → clean, values changed, no errors). The system now automatically updates baseline and saved state when hydration is detected.
+
+- **Added last saved state tracking**: Introduced `updateLastSavedState` function throughout the autosave pipeline to maintain accurate record of successfully persisted values, enabling more reliable pending change detection.
+
+- **Improved pending change computation**: Enhanced `computeHasPendingChanges` logic with multiple layers of validation:
+  - Active debounce timer detection
+  - React-layer pending payload check
+  - Manager-level pending changes
+  - History operation status
+  - Comparison with last saved state
+  - Baseline equality check
+
+#### Undo/Redo System
+
+- **Added checkpoint system**: Implemented `markCheckpoint()` and `undoToLastCheckpoint()` methods in `InternalUndoManager` to support undoing to the last saved state, enabling "undo all unsaved changes" functionality.
+
+- **Improved history stack management**: Enhanced undo/redo stack to properly handle checkpoints and prevent accidental clearing of redo stack during save operations. The future stack is now only cleared when users make new changes, not during programmatic state updates.
+
+- **Better suppression of history recording**: Refined the `suppressRecordRef` mechanism to prevent recording changes that originate from undo/redo/hydrate operations, avoiding infinite loops and duplicate history entries.
+
+#### Transport & Save Pipeline
+
+- **Enhanced composed transport error handling**: Improved error handling in `createComposedTransport` to:
+  - Track successful vs failed diffMap operations separately
+  - Provide detailed error messages for partial save failures
+  - Maintain dirty state for failed fields while clearing successful ones
+  - Update baseline only with successfully saved data
+
+- **Coordinated state updates on successful save**: After successful saves, the system now atomically:
+  1. Updates the baseline with saved payload
+  2. Updates last saved state with current form values
+  3. Resets form dirty state
+  4. Marks undo checkpoint
+  5. Clears operation tracking flags
+
+#### Hydration
+
+- **Manual hydration support**: Added `hydrateFromServer()` method that allows manual form hydration with proper state management, including baseline updates, saved state tracking, and history clearing.
+
+- **Auto-hydration opt-out**: Added `autoHydrate` option (default: `true`) to allow users to disable automatic hydration detection when they want full control over hydration timing.
+
+### Internal Improvements
+
+- **Unified state update pattern**: Established consistent pattern where `updateBaseline` and `updateLastSavedState` are called together throughout the codebase to prevent state desynchronization.
+
+- **Enhanced debug logging**: Added comprehensive debug logging across all state transitions for easier troubleshooting of undo/redo and save operations.
+
+- **Better TypeScript types**: Added `UndoRedoHookParams` interface to explicitly type the baseline and saved state update functions passed to the undo hook.
+
 ## [3.0.2] - 2024-09-23
 
 ### Changed

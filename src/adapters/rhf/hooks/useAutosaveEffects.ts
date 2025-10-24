@@ -215,6 +215,11 @@ export function useAutosaveEffects<T extends FieldValues>({
       return;
     }
 
+    if (lastOpRef.current === "revert") {
+      logger.debug("Skipping save - reverting failed changes");
+      return;
+    }
+
     if (isValidating) {
       logger.debug("Skipping save - form is validating");
       return;

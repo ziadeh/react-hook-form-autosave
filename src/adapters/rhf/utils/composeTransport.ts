@@ -28,6 +28,7 @@ interface ComposeTransportParams {
   form?: any;
   updateLastSavedState?: (values: any) => void;
   isHydratingRef?: { current: boolean };
+  clearDebounceTimeout?: () => void;
 }
 
 export function createComposedTransport({
@@ -48,6 +49,7 @@ export function createComposedTransport({
   form,
   updateLastSavedState,
   isHydratingRef,
+  clearDebounceTimeout,
 }: ComposeTransportParams): Transport {
   return async (payload: SavePayload, ctx?: SaveContext) => {
     const start = performance.now();
@@ -64,6 +66,9 @@ export function createComposedTransport({
         itemId: string | number;
       }> = [];
 
+      // Capture baseline snapshot at start of save for consistent restoration
+      const baselineSnapshot = new Map<string, any[]>();
+
       // diffMap handling (list add/remove via callbacks)
       if (diffMap && Object.keys(diffMap).length > 0) {
         for (const [key, handler] of Object.entries(diffMap)) {
@@ -73,6 +78,9 @@ export function createComposedTransport({
           const curr = (payload as any)[key] || [];
 
           if (!Array.isArray(prev) || !Array.isArray(curr)) continue;
+
+          // Save snapshot of baseline for this field
+          baselineSnapshot.set(key, [...prev]);
 
           const prevIds = new Set(prev.map(handler.idOf));
           const currIds = new Set(curr.map(handler.idOf));
@@ -144,12 +152,13 @@ export function createComposedTransport({
             }
           }
 
-          // Only mark as processed if no errors occurred
+          // Always remove diffMap fields from remainingPayload
+          // Failed fields will be reverted, successful fields are already handled
           if (hasErrors) {
             failedDiffMapFields.push(key);
-            // Keep the field in remainingPayload so the main transport can see it
+            delete (remainingPayload as any)[key];
             logger?.warn(
-              `DiffMap operations failed for field ${key}, keeping in payload`
+              `DiffMap operations failed for field ${key}, removing from payload and will revert`
             );
           } else {
             processedDiffMapFields.push(key);
@@ -178,6 +187,85 @@ export function createComposedTransport({
         const duration = performance.now() - start;
         dispatch?.({ type: "SAVE_ERROR", error: combinedError, duration });
         metrics?.recordSave(duration, false);
+
+        // REVERT FORM BEFORE RETURNING
+        if (form && diffMapErrorDetails.length > 0) {
+          logger?.debug("Reverting diffMap fields before early return", {
+            errorDetails: diffMapErrorDetails,
+          });
+
+          // Cancel any pending debounced saves
+          clearDebounceTimeout?.();
+
+          // Signal that we're reverting (to suppress undo recording)
+          if (lastOpRef) {
+            lastOpRef.current = "revert";
+          }
+          if (isHydratingRef) {
+            isHydratingRef.current = true;
+          }
+
+          // Revert each failed field to baseline
+          failedDiffMapFields.forEach((field) => {
+            try {
+              const handler = diffMap?.[field];
+              if (!handler) return;
+
+              const baselineValue = baselineSnapshot.get(field);
+              if (!Array.isArray(baselineValue)) return;
+
+              logger?.debug(`Reverting ${field} to baseline`, {
+                baseline: baselineValue.map(handler.idOf),
+              });
+
+              form.setValue(field as any, [...baselineValue], {
+                shouldDirty: false,
+                shouldTouch: false,
+                shouldValidate: false,
+              });
+            } catch (e) {
+              logger?.error(
+                `Failed to revert field ${field}`,
+                e instanceof Error ? e : new Error(String(e))
+              );
+            }
+          });
+
+          // Remove the undo entry that was created for this failed change
+          if (undoEnabled && undoMgrRef?.current) {
+            const state = undoMgrRef.current.getState();
+            if (state.past > 0) {
+              undoMgrRef.current.undoWithoutApplying();
+            }
+          }
+
+          // Update baseline to match the reverted values (prevents re-triggering save)
+          const revertedPayload: SavePayload = {};
+          failedDiffMapFields.forEach((field) => {
+            const baselineValue = baselineSnapshot.get(field);
+            if (baselineValue) {
+              revertedPayload[field] = baselineValue;
+            }
+          });
+          if (Object.keys(revertedPayload).length > 0) {
+            updateBaseline?.(revertedPayload);
+            logger?.debug("Updated baseline after revert to prevent re-save", {
+              revertedPayload,
+            });
+          }
+
+          // Update last saved state with the reverted values
+          if (updateLastSavedState) {
+            const currentValues = form.getValues();
+            updateLastSavedState(currentValues);
+          }
+
+          // Clear the revert flag after a short delay
+          setTimeout(() => {
+            if (lastOpRef) lastOpRef.current = null;
+            if (isHydratingRef) isHydratingRef.current = false;
+          }, 100);
+        }
 
         const failureResult = {
           ok: false,
@@ -337,16 +425,18 @@ export function createComposedTransport({
 
         onSaved?.(result, payload);
       } else {
-        // FAILURE CASE: Revert failed diffMap fields and clean up undo history
+        // FAILURE CASE: Revert only failed diffMap items, keeping successful changes
         dispatch?.({ type: "SAVE_ERROR", error: result.error, duration });
         metrics?.recordSave(duration, false);
 
-        // If we have diffMap errors, revert those fields to their baseline values
-        if (form && baselineRef?.current && diffMapErrorDetails.length > 0) {
-          logger?.debug("Reverting failed diffMap fields to baseline", {
-            failedFields: failedDiffMapFields,
-            baseline: baselineRef.current,
+        // If we have diffMap errors, revert ONLY the failed items, not the entire field
+        if (form && diffMapErrorDetails.length > 0) {
+          logger?.debug("Reverting only failed diffMap items", {
+            errorDetails: diffMapErrorDetails,
           });
+
+          // Cancel any pending debounced saves
+          clearDebounceTimeout?.();
 
           // Signal that we're reverting (to suppress undo recording)
           if (lastOpRef) {
@@ -356,33 +446,75 @@ export function createComposedTransport({
             isHydratingRef.current = true;
           }
 
-          // Group errors by field to revert each field only once
-          const fieldsToRevert = new Set(
-            diffMapErrorDetails.map((detail) => detail.field)
-          );
+          // Group errors by field
+          const errorsByField = new Map<
+            string,
+            Array<{
+              operation: "add" | "remove";
+              itemId: string | number;
+              error: Error;
+            }>
+          >();
 
-          fieldsToRevert.forEach((field) => {
+          diffMapErrorDetails.forEach((detail) => {
+            if (!errorsByField.has(detail.field)) {
+              errorsByField.set(detail.field, []);
+            }
+            errorsByField.get(detail.field)!.push({
+              operation: detail.operation,
+              itemId: detail.itemId,
+              error: detail.error,
+            });
+          });
+
+          // Track the reverted values to update baseline
+          const revertedPayload: SavePayload = {};
+
+          // Revert each field completely to baseline on any failure
+          errorsByField.forEach((errors, field) => {
             try {
-              const baselineValue = baselineRef.current?.[field];
-              const currentValue = form.getValues(field as any);
-
-              // Only revert if the value has actually changed from baseline
-              if (
-                baselineValue !== undefined &&
-                JSON.stringify(currentValue) !== JSON.stringify(baselineValue)
-              ) {
-                logger?.debug(`Reverting field ${field} to baseline`, {
-                  currentValue,
-                  baselineValue,
-                });
-
-                // Revert the field value
-                form.setValue(field as any, baselineValue, {
-                  shouldDirty: false,
-                  shouldTouch: false,
-                  shouldValidate: false,
-                });
+              const handler = diffMap?.[field];
+              if (!handler) {
+                logger?.warn(`No diffMap handler for field ${field}`);
+                return;
               }
+
+              const currentValue = form.getValues(field as any);
+              const baselineValue = baselineSnapshot.get(field);
+
+              if (
+                !Array.isArray(currentValue) ||
+                !Array.isArray(baselineValue)
+              ) {
+                logger?.warn(`Field ${field} is not an array, cannot revert`);
+                return;
+              }
+
+              // Simply revert to baseline snapshot - don't try to be smart about partial success
+              // This is clearer and more predictable for the user
+              const revertedValue = [...baselineValue];
+
+              logger?.debug(`Reverted ${field} to baseline due to failures`, {
+                baseline: baselineValue.map(handler.idOf),
+                current: currentValue.map(handler.idOf),
+                reverted: revertedValue.map(handler.idOf),
+                errors: errors.map((e) => `${e.operation}(${e.itemId})`),
+              });
+
+              // Store the reverted value for baseline update
+              revertedPayload[field] = revertedValue;
+
+              // Set the reverted value
+              logger?.debug(`Setting reverted value for ${field}`, {
+                before: currentValue.map((item) => handler.idOf(item)),
+                after: revertedValue.map((item) => handler.idOf(item)),
+              });
+
+              form.setValue(field as any, revertedValue, {
+                shouldDirty: false, // Don't mark as dirty - the reverted value should match baseline
+                shouldTouch: false,
+                shouldValidate: false,
+              });
             } catch (e) {
               logger?.error(
                 `Failed to revert field ${field}`,
@@ -391,14 +523,18 @@ export function createComposedTransport({
             }
           });
 
+          // Update baseline to match the reverted values (prevents re-triggering save)
+          if (Object.keys(revertedPayload).length > 0) {
+            updateBaseline?.(revertedPayload);
+            logger?.debug("Updated baseline after revert to prevent re-save", {
+              revertedPayload,
+            });
+          }
+
           // Remove the undo entry that was created for this failed change
-          // since the change never actually succeeded
           if (undoEnabled && undoMgrRef?.current) {
-            // Check if we have any undo history to remove
             const state = undoMgrRef.current.getState();
             if (state.past > 0) {
-              // Remove the last entry from the past stack since it represents
-              // a change that failed to save
               logger?.debug("Removing failed change from undo history", {
                 stateBefore: state,
               });
@@ -409,6 +545,13 @@ export function createComposedTransport({
                 stateAfter: undoMgrRef.current.getState(),
               });
             }
+          }
+
+          // Update last saved state with the reverted values
+          if (updateLastSavedState && form) {
+            const currentValues = form.getValues();
+            updateLastSavedState(currentValues);
+            logger?.debug("Updated last saved state after revert");
           }
 
           // Clear the revert flag after a short delay
