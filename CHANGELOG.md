@@ -2,6 +2,22 @@
 
 All notable changes to **react-hook-form-autosave** will be documented here.
 
+## [3.0.4] - 2024-11-11
+
+### Fixed
+
+#### shouldSave Callback Not Being Called During Regular Autosave
+
+- **FIXED**: Critical bug where the `shouldSave` callback was only being invoked during undo/redo operations, not during regular autosave triggers
+  - `shouldSave` is now properly called before every autosave attempt (form value changes)
+  - `shouldSave` is now called in `forceSave()` method to allow manual save blocking
+  - This fix enables users to implement custom conditional logic to block saves based on form state (e.g., prevent saves while inputs are focused, when form is invalid, etc.)
+  - Added debug logging when `shouldSave` blocks a save operation
+
+### Migration Notes
+
+No breaking changes. If you were previously using `shouldSave`, it will now work as expected during regular autosave operations, not just undo/redo.
+
 ## [3.0.3] - 2024-10-24
 
 ### Fixed

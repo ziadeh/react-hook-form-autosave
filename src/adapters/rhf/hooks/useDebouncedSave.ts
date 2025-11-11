@@ -23,6 +23,12 @@ interface DebouncedSaveHookParams<T extends FieldValues> {
   equalsBaseline: (vals: any) => boolean;
   getEffectiveDirtyFields: (dirty: any) => any;
   selectPayload: (values: T, dirtyFields: any) => Partial<T>;
+  shouldSave?: (ctx: {
+    values: T;
+    isValid: boolean;
+    isDirty: boolean;
+    dirtyFields: any;
+  }) => boolean;
   config: { debounceMs?: number };
   // Refs from other hooks
   debounceTimeoutRef: { current: ReturnType<typeof setTimeout> | null };
@@ -53,6 +59,7 @@ export function useDebouncedSave<T extends FieldValues>({
   equalsBaseline,
   getEffectiveDirtyFields,
   selectPayload,
+  shouldSave,
   config,
   debounceTimeoutRef,
   pendingPayloadRef,
@@ -283,6 +290,26 @@ export function useDebouncedSave<T extends FieldValues>({
       return { ok: true } as const;
     }
 
+    // Check shouldSave before proceeding
+    if (shouldSave) {
+      const { isValid, isDirty, dirtyFields } = form.formState;
+      const shouldProceed = shouldSave({
+        values: currentValues,
+        isValid,
+        isDirty,
+        dirtyFields,
+      });
+
+      if (!shouldProceed) {
+        logger.debug("Force save blocked - shouldSave returned false", {
+          isValid,
+          isDirty,
+          dirtyFieldsCount: Object.keys(dirtyFields).length,
+        });
+        return { ok: false, error: "Save blocked by shouldSave" } as const;
+      }
+    }
+
     logger.debug("Force save executing", {
       payloadKeys: Object.keys(payloadToSave),
       payload: payloadToSave,
@@ -315,6 +342,7 @@ export function useDebouncedSave<T extends FieldValues>({
     setHistoryPending,
     setNoPendingGuard,
     updateLastSavedState,
+    shouldSave,
   ]);
 
   return {

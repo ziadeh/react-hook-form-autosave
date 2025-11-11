@@ -18,6 +18,12 @@ interface AutosaveEffectsParams<T extends FieldValues> {
   ignoreHistoryOps: boolean;
   validationCache: ValidationCache;
   debouncedSave: (values: T, dirtyFields: any, forceAfterUndo: boolean) => void;
+  shouldSave?: (ctx: {
+    values: T;
+    isValid: boolean;
+    isDirty: boolean;
+    dirtyFields: any;
+  }) => boolean;
   autoHydrate?: boolean;
   // State refs
   isHydratingRef: { current: boolean };
@@ -52,6 +58,7 @@ export function useAutosaveEffects<T extends FieldValues>({
   ignoreHistoryOps,
   validationCache,
   debouncedSave,
+  shouldSave,
   autoHydrate = true,
   isHydratingRef,
   isBaselineInitializedRef,
@@ -251,6 +258,26 @@ export function useAutosaveEffects<T extends FieldValues>({
     }
 
     if (!isUndoRedo && hasUserChanges) {
+      // Check shouldSave before triggering autosave
+      if (shouldSave) {
+        const { isValid } = form.formState;
+        const shouldProceed = shouldSave({
+          values,
+          isValid,
+          isDirty,
+          dirtyFields,
+        });
+
+        if (!shouldProceed) {
+          logger.debug("Skipping save - shouldSave returned false", {
+            dirtyFields: Object.keys(dirtyFields),
+            isDirty,
+            isValid,
+          });
+          return;
+        }
+      }
+
       logger.debug("Triggering save for user changes", {
         dirtyFields: Object.keys(dirtyFields),
         isDirty,
@@ -263,6 +290,7 @@ export function useAutosaveEffects<T extends FieldValues>({
     isDirty,
     isValidating,
     debouncedSave,
+    shouldSave,
     diffMap,
     logger,
     undoEnabled,
