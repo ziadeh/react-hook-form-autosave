@@ -1,10 +1,13 @@
-import { useRef, useCallback } from "react";
+import { useRef, useCallback, useEffect } from "react";
 import type { FieldValues } from "react-hook-form";
 import type { FormSubset } from "../../../strategies/validation/types";
 import type { SavePayload } from "../../../core/types";
 import type { PendingState } from "../utils/types";
 import { AutosaveManager } from "../../../core/autosave";
 import { createLogger } from "../../../utils/logger";
+
+// Time to auto-clear the no-pending guard (in milliseconds)
+const NO_PENDING_GUARD_CLEAR_DELAY = 100;
 
 export function usePendingState<T extends FieldValues>(
   form: FormSubset<T>,
@@ -19,12 +22,20 @@ export function usePendingState<T extends FieldValues>(
   const pendingPayloadRef = useRef<SavePayload>({});
   const historyPendingRef = useRef(false);
   const noPendingGuardRef = useRef(false);
+  const noPendingGuardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedStateRef = useRef<string>("");
 
   const clearDebounceTimeout = useCallback(() => {
     if (debounceTimeoutRef.current) {
       clearTimeout(debounceTimeoutRef.current);
       debounceTimeoutRef.current = null;
+    }
+  }, []);
+
+  const clearNoPendingGuardTimer = useCallback(() => {
+    if (noPendingGuardTimerRef.current) {
+      clearTimeout(noPendingGuardTimerRef.current);
+      noPendingGuardTimerRef.current = null;
     }
   }, []);
 
@@ -87,10 +98,15 @@ export function usePendingState<T extends FieldValues>(
 
     // If we explicitly set no pending guard, respect it
     if (noPendingGuardRef.current) {
+      // Clear any existing guard timer
+      clearNoPendingGuardTimer();
+
       // Auto-clear the guard after a short delay
-      setTimeout(() => {
+      noPendingGuardTimerRef.current = setTimeout(() => {
         noPendingGuardRef.current = false;
-      }, 100);
+        noPendingGuardTimerRef.current = null;
+      }, NO_PENDING_GUARD_CLEAR_DELAY);
+
       logger.debug("[hasPendingChanges] No pending guard active", debugInfo);
       return false;
     }
@@ -130,8 +146,9 @@ export function usePendingState<T extends FieldValues>(
       return true;
     }
 
-    // NEW: If form is dirty but we have a matching saved state, we're actually clean
-    if (form.formState.isDirty && lastSavedStateRef.current) {
+    // CRITICAL: Check if current values match last saved state FIRST
+    // This prevents false positives when RHF hasn't updated dirtyFields yet after save
+    if (lastSavedStateRef.current) {
       try {
         const currentValues = form.getValues();
         const currentStableValues = JSON.stringify(
@@ -181,7 +198,7 @@ export function usePendingState<T extends FieldValues>(
       logger.error("[hasPendingChanges] Error comparing with baseline");
       return false;
     }
-  }, [manager, ignoreHistoryOps, form, equalsBaseline, logger]);
+  }, [manager, ignoreHistoryOps, form, equalsBaseline, logger, clearNoPendingGuardTimer]);
 
   const getPendingChanges = useCallback(() => {
     const reactPending = pendingPayloadRef.current;
@@ -216,6 +233,7 @@ export function usePendingState<T extends FieldValues>(
 
   const abort = useCallback(() => {
     clearDebounceTimeout();
+    clearNoPendingGuardTimer();
     pendingPayloadRef.current = {};
     historyPendingRef.current = false;
     const snap = form.getValues();
@@ -227,10 +245,18 @@ export function usePendingState<T extends FieldValues>(
   }, [
     manager,
     clearDebounceTimeout,
+    clearNoPendingGuardTimer,
     form,
     equalsBaseline,
     updateLastSavedState,
   ]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      clearNoPendingGuardTimer();
+    };
+  }, [clearNoPendingGuardTimer]);
 
   return {
     // Refs (for other hooks to access)

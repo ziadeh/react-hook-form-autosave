@@ -46,13 +46,15 @@ export function useUndoRedo<T extends FieldValues>(
     (typeof document !== "undefined" ? document : (undefined as any));
 
   // State refs
-  const lastValuesRef = useRef<any>(form.getValues());
+  const initialValues = form.getValues();
+  const lastValuesRef = useRef<any>(initialValues);
   const suppressRecordRef = useRef<UndoOp>(null);
   const undoMgrRef = useRef<InternalUndoManager | null>(null);
   const lastOpRef = useRef<UndoOp>(null);
   const undoAffectedFieldsRef = useRef<Set<string>>(new Set());
   const isHydratingRef = useRef(false);
-  const lastRecordedValuesSigRef = useRef<string>("");
+  // Initialize with initial form state to prevent recording empty first step
+  const lastRecordedValuesSigRef = useRef<string>(stableStringify(initialValues as any));
   const historyPendingRef = useRef(false);
   const noPendingGuardRef = useRef(false);
 
@@ -505,6 +507,12 @@ export function useUndoRedo<T extends FieldValues>(
 
   const handleHydration = useCallback(
     (data: T) => {
+      // Validate input data
+      if (!data || typeof data !== 'object') {
+        logger.error("Invalid data provided to handleHydration");
+        return;
+      }
+
       logger.debug("Auto-hydrating form data", data);
 
       isHydratingRef.current = true;
@@ -557,6 +565,12 @@ export function useUndoRedo<T extends FieldValues>(
 
   const hydrateFromServer = useCallback(
     (data: T) => {
+      // Validate input data
+      if (!data || typeof data !== 'object') {
+        logger.error("Invalid data provided to hydrateFromServer");
+        return;
+      }
+
       logger.debug("Manual hydration requested", data);
 
       isHydratingRef.current = true;

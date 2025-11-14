@@ -39,7 +39,8 @@ interface AutosaveEffectsParams<T extends FieldValues> {
   clearPendingPayload: () => void;
   setLastQueuedSig: (sig: string) => void;
   setNoPendingGuard: (guard: boolean) => void;
-  updateLastSavedState?: (values: any) => void; // NEW: Add this
+  updateLastSavedState?: (values: any) => void;
+  isEmpty: () => boolean; // Check if manager queue is empty
   // Hydration action
   handleHydration: (data: T) => void;
   // Undo manager ref
@@ -72,7 +73,8 @@ export function useAutosaveEffects<T extends FieldValues>({
   clearPendingPayload,
   setLastQueuedSig,
   setNoPendingGuard,
-  updateLastSavedState, // NEW: Accept this
+  updateLastSavedState,
+  isEmpty,
   handleHydration,
   undoMgrRef,
 }: AutosaveEffectsParams<T>) {
@@ -93,7 +95,7 @@ export function useAutosaveEffects<T extends FieldValues>({
       return;
     }
 
-    const wasdirty = prevIsDirtyRef.current;
+    const wasDirty = prevIsDirtyRef.current;
     const isNowClean = !isDirty;
     const valuesChanged =
       stableStringify(values as any) !==
@@ -105,11 +107,14 @@ export function useAutosaveEffects<T extends FieldValues>({
     // 2. Values actually changed
     // 3. No validation errors (indicates successful data load)
     // 4. Not currently hydrating (prevent loops)
-    if (isNowClean && valuesChanged && hasNoErrors && !isHydratingRef.current) {
+    // 5. No pending saves in progress (prevent data loss)
+    const queueIsEmpty = isEmpty();
+    if (isNowClean && valuesChanged && hasNoErrors && !isHydratingRef.current && queueIsEmpty) {
       logger.debug("Auto-detecting form hydration", {
-        wasdirty,
+        wasDirty,
         isNowClean,
         valuesChanged,
+        queueIsEmpty,
         newValues: values,
       });
 
@@ -140,6 +145,7 @@ export function useAutosaveEffects<T extends FieldValues>({
     values,
     form.formState.errors,
     isHydratingRef,
+    isEmpty,
     logger,
     handleHydration,
     initializeBaseline,

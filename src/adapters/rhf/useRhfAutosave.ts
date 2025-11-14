@@ -269,7 +269,8 @@ export function useRhfAutosave<T extends FieldValues>(
     clearPendingPayload: pendingState.clearPendingPayload,
     setLastQueuedSig: pendingState.setLastQueuedSig,
     setNoPendingGuard: pendingState.setNoPendingGuard,
-    updateLastSavedState: pendingState.updateLastSavedState, // ADD THIS
+    updateLastSavedState: pendingState.updateLastSavedState,
+    isEmpty: pendingState.isEmpty,
     autoHydrate,
     lastRecordedValuesSigRef: undoRedo.lastRecordedValuesSigRef,
     handleHydration: undoRedo.handleHydration,
