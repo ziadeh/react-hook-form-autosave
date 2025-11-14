@@ -6,7 +6,7 @@ import type { ValidationMode } from "../utils/types";
 import { AutosaveManager } from "../../../core/autosave";
 import { ValidationCache } from "../../../cache/validationCache";
 import { MetricsCollector } from "../../../metrics/collector";
-import { stableStringify } from "../utils/diff";
+import { stableStringify, deepEqual } from "../utils/diff";
 import { createLogger, type Logger } from "../../../utils/logger";
 import {
   createValidationStrategy,
@@ -95,8 +95,12 @@ export function useDebouncedSave<T extends FieldValues>({
             forceAfterUndo &&
             (lastOpRef.current === "undo" || lastOpRef.current === "redo")
           ) {
+            // After undo/redo, we need to sync the server with the current form state
+            // Build payload by comparing with baseline (last saved state)
             payloadToSave = {};
+
             if (baselineRef.current) {
+              // Compare current values with baseline to find what changed
               for (const key of Object.keys(valuesArg)) {
                 if (
                   !deepEqual((valuesArg as any)[key], baselineRef.current[key])
@@ -104,11 +108,17 @@ export function useDebouncedSave<T extends FieldValues>({
                   (payloadToSave as any)[key] = (valuesArg as any)[key];
                 }
               }
+            } else {
+              // No baseline yet - send all current values
+              payloadToSave = valuesArg as SavePayload;
             }
+
             logger.debug(
               "Building payload after undo/redo by comparing with baseline",
               {
+                hasBaseline: !!baselineRef.current,
                 changedFields: Object.keys(payloadToSave),
+                payloadToSave,
               }
             );
           } else {
@@ -349,35 +359,4 @@ export function useDebouncedSave<T extends FieldValues>({
     debouncedSave,
     forceSave,
   };
-}
-
-// Helper function to avoid circular dependency
-function deepEqual(a: any, b: any): boolean {
-  if (Object.is(a, b)) return true;
-  if (a instanceof Date && b instanceof Date) {
-    return a.getTime() === b.getTime();
-  }
-  if (typeof a !== typeof b) return false;
-  if (Array.isArray(a) && Array.isArray(b)) {
-    if (a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i++) {
-      if (!deepEqual(a[i], b[i])) return false;
-    }
-    return true;
-  }
-  if (
-    a !== null &&
-    typeof a === "object" &&
-    b !== null &&
-    typeof b === "object"
-  ) {
-    const ak = Object.keys(a);
-    const bk = Object.keys(b);
-    if (ak.length !== bk.length) return false;
-    for (const k of ak) {
-      if (!deepEqual(a[k], (b as any)[k])) return false;
-    }
-    return true;
-  }
-  return false;
 }
