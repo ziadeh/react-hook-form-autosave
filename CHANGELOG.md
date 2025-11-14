@@ -2,6 +2,63 @@
 
 All notable changes to **react-hook-form-autosave** will be documented here.
 
+## [3.0.5] - 2025-01-14
+
+### Fixed
+
+#### Critical Race Condition in Auto-Hydration
+- **FIXED**: Race condition where auto-hydration could overwrite unsaved changes if triggered while save was in progress
+  - Added `isEmpty()` check before hydration to ensure no pending saves exist
+  - Prevents data loss when server data loads while autosave is in flight
+  - Enhanced debug logging with `queueIsEmpty` indicator
+
+#### Memory Leak in Pending State Guard
+- **FIXED**: Memory leak in `noPendingGuard` timer cleanup
+  - Created `noPendingGuardTimerRef` to track setTimeout ID
+  - Added `clearNoPendingGuardTimer()` helper function
+  - Cleanup timer on component unmount via useEffect
+  - Cleanup timer in `abort()` function
+
+#### Invalid Data Validation in Hydration
+- **FIXED**: Missing null/undefined validation in `hydrateFromServer` and `handleHydration`
+  - Added validation checks before calling `form.reset()` to prevent crashes
+  - Returns early with error log if invalid data is provided
+  - Prevents app crashes from malformed server responses
+
+#### False Positive Pending Changes After Save
+- **FIXED**: `hasPendingChanges` incorrectly staying `true` after successful save
+  - Reordered state checks to compare with `lastSavedState` BEFORE checking dirty fields
+  - Removes dependency on `isDirty` status for saved state comparison
+  - Eliminates race condition with React Hook Form's state updates
+
+#### Undo/Redo Empty Payload and Missing History
+- **FIXED**: Empty data `{}` being sent to server after undo operations
+  - Added fallback to send full current values when no baseline exists
+  - Improved payload building logic with better baseline handling
+- **FIXED**: Empty first step in undo history
+  - Initialize `lastRecordedValuesSigRef` with initial form values signature
+  - Prevents recording phantom empty state as first undo step
+- Enhanced undo/redo debug logging with `hasBaseline` and full payload details
+
+### Improved
+
+#### Code Quality
+- Renamed `wasdirty` to `wasDirty` for consistent camelCase naming
+- Removed duplicate `deepEqual` implementation, now imports from utils
+- Replaced magic number `100` with `NO_PENDING_GUARD_CLEAR_DELAY` constant
+- Improved code maintainability and consistency
+
+#### Examples
+- Added comprehensive T3 Stack demo app to `examples/comprehensive-t3-app/`
+  - Full-featured demo with all library features
+  - Next.js 15 + tRPC integration
+  - Shadcn UI components
+  - Multiple form field types and undo/redo showcase
+
+### Migration Notes
+
+No breaking changes. All fixes are backwards compatible and improve stability.
+
 ## [3.0.4] - 2024-11-11
 
 ### Fixed
