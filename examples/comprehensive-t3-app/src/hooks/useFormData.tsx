@@ -1,5 +1,12 @@
 import { useCallback, useEffect } from "react";
-import { type Transport, useRhfAutosave } from "react-hook-form-autosave";
+import { 
+  type Transport, 
+  useRhfAutosave,
+  mapNestedKeys,
+  detectNestedArrayChanges,
+  findArrayFields,
+  getByPath,
+} from "react-hook-form-autosave";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -33,26 +40,68 @@ export const useFormData = () => {
   const { mutateAsync: addSkill } = api.sample.addSkill.useMutation();
   const { mutateAsync: removeSkill } = api.sample.removeSkill.useMutation();
 
-  // Create stable transport function
+  // Create stable transport function with nested field support
   const transport: Transport = useCallback(
-    async (payload: any) => {
+    async (payload: any, context: any) => {
       console.log("🚀 TRANSPORT CALLED - Sending to API:", payload);
+      console.log("📊 Context:", context);
+
       try {
-        const { skills, isAnyInputFocused, ...rest } = payload;
+        const { skills, isAnyInputFocused, teamMembers, ...rest } = payload;
+
+        // Demonstrate nested key mapping for API
+        const apiPayload = mapNestedKeys(rest, {
+          'profile.firstName': 'first_name',
+          'profile.lastName': 'last_name',
+          'profile.email': 'email_address',
+          'address.zipCode': 'address.postal_code',
+          'socialLinks.github': 'github_url',
+          'socialLinks.linkedin': 'linkedin_url',
+        }, { preserveUnmapped: true });
+
+        console.log("🔄 Transformed payload for API:", apiPayload);
+
+        // Auto-detect array changes in nested fields
+        const baseline = form.getValues();
+        const arrayPaths = findArrayFields(payload);
+        console.log("📋 Array fields detected:", arrayPaths);
+
+        if (arrayPaths.length > 0) {
+          const arrayChanges = detectNestedArrayChanges(
+            baseline,
+            payload,
+            arrayPaths
+          );
+          console.log("🔍 Array changes detected:", arrayChanges);
+
+          // Show toast for array changes
+          Object.keys(arrayChanges).forEach(path => {
+            const change = arrayChanges[path];
+            if (change?.hasChanges) {
+              toast.info(`${path}: +${change.added.length} -${change.removed.length} ~${change.modified.length}`);
+            }
+          });
+        }
+
+        // Example: Get nested values safely
+        const firstName = getByPath(payload, 'profile.firstName');
+        const city = getByPath(payload, 'address.city');
+        console.log("✅ Extracted values:", { firstName, city });
 
         await updateMutation.mutateAsync({
           id: userId,
-          data: rest,
+          data: apiPayload,
         });
         return { ok: true };
       } catch (error) {
+        console.error("❌ Save error:", error);
         return {
           ok: false,
           error: error instanceof Error ? error : new Error(String(error)),
         };
       }
     },
-    [userId, updateMutation],
+    [userId, updateMutation, form],
   );
   const shouldSave = useCallback(
     ({
@@ -86,10 +135,7 @@ export const useFormData = () => {
     },
     shouldSave,
     validateBeforeSave: "payload",
-    keyMap: {
-      // Transform "country" to "country_code" when saving to server
-      country: ["country_code", String],
-    },
+    // Note: keyMap is handled inside transport with mapNestedKeys for more flexibility
     diffMap: {
       skills: {
         idOf: (skill) => skill.id,
