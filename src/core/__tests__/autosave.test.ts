@@ -200,6 +200,38 @@ describe('AutosaveManager', () => {
       expect(transport).toHaveBeenCalled();
     });
 
+    it('should automatically rerun flush after inflight save completes', async () => {
+      let callCount = 0;
+      const transport = createMockTransport(async () => {
+        callCount++;
+        await new Promise(resolve => setTimeout(resolve, 30));
+        return { ok: true };
+      });
+
+      const manager = new AutosaveManager(transport, 0, mockLogger);
+
+      // Queue first change and start saving
+      manager.queueChange({ name: 'John' });
+      const firstFlush = manager.flush();
+
+      // While first save is in progress, queue another change and try to flush
+      await new Promise(resolve => setTimeout(resolve, 10));
+      manager.queueChange({ email: 'john@example.com' });
+      await manager.flush(); // This should set shouldRerun flag
+
+      // Wait for first flush to complete
+      await firstFlush;
+
+      // Wait a bit for the automatic rerun to happen
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      // Transport should have been called twice - once for initial, once for rerun
+      expect(callCount).toBeGreaterThanOrEqual(2);
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        'Flush requested while save in progress, will rerun'
+      );
+    });
+
     it('should create new AbortController for each flush', async () => {
       const transport = createMockTransport();
       const manager = new AutosaveManager(transport);
