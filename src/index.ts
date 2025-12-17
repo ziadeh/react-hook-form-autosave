@@ -22,6 +22,12 @@ export * from "./utils/mapKeys";
 export * from "./utils/debounce";
 export { createLogger, type Logger } from "./utils/logger";
 
+// Nested field utilities
+export * from "./utils/fieldPath";
+export * from "./utils/nestedKeyMap";
+export * from "./utils/nestedArrayDiff";
+export * from "./utils/deepMerge";
+
 // Cache
 export { PayloadCache } from "./cache/payloadCache";
 export { ValidationCache } from "./cache/validationCache";

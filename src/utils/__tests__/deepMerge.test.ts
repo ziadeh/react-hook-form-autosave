@@ -242,6 +242,43 @@ describe('deep merge utilities', () => {
         // Should not throw or hang
         expect(() => deepMerge(target, source, { maxDepth: 5 })).not.toThrow();
       });
+
+      it('should handle source as non-object', () => {
+        const target = { a: 1 };
+        const source = null;
+
+        const result = deepMerge(target, source as any);
+
+        // When source is null/non-object, it returns the source
+        expect(result).toBeNull();
+      });
+
+      it('should handle target as non-object at nested level', () => {
+        const target = { a: 'string' };
+        const source = { a: { b: 1 } };
+
+        const result = deepMerge(target, source);
+
+        expect(result).toEqual({ a: { b: 1 } });
+      });
+
+      it('should handle array in target but object in source', () => {
+        const target = { items: [1, 2, 3] };
+        const source = { items: { a: 1 } };
+
+        const result = deepMerge(target, source);
+
+        expect(result.items).toEqual({ a: 1 });
+      });
+
+      it('should handle object in target but array in source', () => {
+        const target = { items: { a: 1 } };
+        const source = { items: [1, 2, 3] };
+
+        const result = deepMerge(target, source);
+
+        expect(result.items).toEqual([1, 2, 3]);
+      });
     });
   });
 

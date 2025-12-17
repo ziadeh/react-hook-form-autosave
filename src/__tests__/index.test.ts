@@ -102,6 +102,53 @@ describe('index exports', () => {
     });
   });
 
+  describe('nested field utility exports', () => {
+    it('should export path utilities', () => {
+      expect(autosaveKit.parsePath).toBeDefined();
+      expect(autosaveKit.joinPath).toBeDefined();
+      expect(autosaveKit.getByPath).toBeDefined();
+      expect(autosaveKit.setByPath).toBeDefined();
+      expect(autosaveKit.deleteByPath).toBeDefined();
+      expect(autosaveKit.hasPath).toBeDefined();
+      expect(autosaveKit.getParentPath).toBeDefined();
+      expect(autosaveKit.getFieldName).toBeDefined();
+      expect(autosaveKit.isParentPath).toBeDefined();
+      expect(autosaveKit.isChildPath).toBeDefined();
+      expect(autosaveKit.getAllPaths).toBeDefined();
+      expect(autosaveKit.normalizePath).toBeDefined();
+      expect(autosaveKit.cloneAlongPath).toBeDefined();
+    });
+
+    it('should export nested key mapping utilities', () => {
+      expect(autosaveKit.mapNestedKeys).toBeDefined();
+      expect(autosaveKit.createNestedKeyMapper).toBeDefined();
+      expect(autosaveKit.reverseNestedKeyMap).toBeDefined();
+      expect(autosaveKit.flattenObject).toBeDefined();
+      expect(autosaveKit.unflattenObject).toBeDefined();
+      expect(autosaveKit.mergeNestedKeyMaps).toBeDefined();
+      expect(autosaveKit.validateNestedKeyMap).toBeDefined();
+    });
+
+    it('should export array diffing utilities', () => {
+      expect(autosaveKit.diffArrays).toBeDefined();
+      expect(autosaveKit.applyArrayDiff).toBeDefined();
+      expect(autosaveKit.detectNestedArrayChanges).toBeDefined();
+      expect(autosaveKit.findArrayFields).toBeDefined();
+      expect(autosaveKit.summarizeArrayDiff).toBeDefined();
+      expect(autosaveKit.mergeArrayDiffs).toBeDefined();
+    });
+
+    it('should export deep merge utilities', () => {
+      expect(autosaveKit.deepMerge).toBeDefined();
+      expect(autosaveKit.deepUpdate).toBeDefined();
+      expect(autosaveKit.cloneDeep).toBeDefined();
+      expect(autosaveKit.mergeAtPath).toBeDefined();
+      expect(autosaveKit.isDeepEqual).toBeDefined();
+      expect(autosaveKit.getDiff).toBeDefined();
+      expect(autosaveKit.applyDiff).toBeDefined();
+    });
+  });
+
   describe('cache exports', () => {
     it('should export PayloadCache', () => {
       expect(autosaveKit.PayloadCache).toBeDefined();
