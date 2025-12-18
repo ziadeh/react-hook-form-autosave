@@ -39,14 +39,6 @@ export function useUndoRedo<T extends FieldValues>(
 ) {
   const logger = createLogger("undo-redo", debug);
 
-  // Log immediately on each render to verify hook is called
-  if (debug) {
-    console.log("[undo-redo] Hook called", { 
-      undoOptionsEnabled: undoOptions?.enabled,
-      debug 
-    });
-  }
-
   const undoEnabled = !!undoOptions?.enabled;
   const hotkeysEnabled = undoEnabled && (undoOptions?.hotkeys ?? true);
   const captureInInputs = undoOptions?.captureInInputs ?? false;
@@ -139,18 +131,10 @@ export function useUndoRedo<T extends FieldValues>(
 
   // Initialize undo manager
   useEffect(() => {
-    console.log("[undo-redo] Init effect running", { undoEnabled, hasManager: !!undoMgrRef.current });
-    
-    if (!undoEnabled) {
-      console.log("[undo-redo] Undo is disabled, skipping manager init");
-      return;
-    }
-    if (undoMgrRef.current) {
-      console.log("[undo-redo] Undo manager already exists");
-      return;
-    }
+    if (!undoEnabled) return;
+    if (undoMgrRef.current) return;
 
-    console.log("[undo-redo] 🔧 Creating new undo manager");
+    logger.debug("Creating undo manager");
 
     const writer = (name: string, value: unknown) => {
       // Reflect true op while applying history (helps skip recording)
@@ -189,7 +173,7 @@ export function useUndoRedo<T extends FieldValues>(
       updateBaselineAfterHistory
     );
     
-    console.log("[undo-redo] ✅ Undo manager created successfully");
+    logger.debug("Undo manager created successfully");
   }, [undoEnabled, updateBaselineAfterHistory, form, getCurrentValues, logger]);
 
   // Subscribe to undo manager changes for live updates

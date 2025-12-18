@@ -4,9 +4,6 @@ import {
   useRhfAutosave,
   mapNestedKeys,
   detectNestedArrayChanges,
-  findArrayFields,
-  getByPath,
-  pickChanged,
 } from "react-hook-form-autosave";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -57,17 +54,12 @@ export const useFormData = () => {
   // Create stable transport function with nested field support
   const transport: Transport = useCallback(
     async (payload: any, context: any) => {
-      console.log("🚀 TRANSPORT CALLED - Payload received:", payload);
-      console.log("🚀 Payload keys:", Object.keys(payload || {}));
-
       // If payload is empty, just return success without making API call
       if (!payload || Object.keys(payload).length === 0) {
-        console.log("⚠️ Empty payload received, skipping API call");
         return { ok: true };
       }
 
       try {
-        // ===== FEATURE: Nested Key Mapping =====
         // Transform nested form fields to match API structure
         const keyMapConfig = {
           'profile.firstName': 'first_name',
@@ -87,11 +79,8 @@ export const useFormData = () => {
         const transformedPayload = mapNestedKeys(payload, keyMapConfig, { 
           preserveUnmapped: true 
         });
-        
-        console.log("🔄 Transformed payload (mapNestedKeys):", transformedPayload);
 
-        // ===== FEATURE: Array Change Detection =====
-        // Detect what changed in arrays (added/removed/modified)
+        // Detect array changes for user feedback
         if (payload.teamMembers && baselineRef.current?.teamMembers) {
           const arrayChanges = detectNestedArrayChanges(
             { teamMembers: baselineRef.current.teamMembers },
@@ -102,14 +91,6 @@ export const useFormData = () => {
           
           if (arrayChanges.teamMembers?.hasChanges) {
             const { added, removed, modified } = arrayChanges.teamMembers;
-            console.log("📊 Team Members Changes:", {
-              added: added.length,
-              removed: removed.length, 
-              modified: modified.length,
-              details: arrayChanges.teamMembers
-            });
-            
-            // Show detailed toast for array changes
             const parts = [];
             if (added.length > 0) parts.push(`+${added.length} added`);
             if (removed.length > 0) parts.push(`-${removed.length} removed`);
@@ -120,24 +101,7 @@ export const useFormData = () => {
           }
         }
 
-        // ===== FEATURE: Safe Path Extraction =====
-        // Demonstrate getByPath for logging
-        const extractedValues = {
-          firstName: getByPath(payload, 'profile.firstName'),
-          lastName: getByPath(payload, 'profile.lastName'),
-          city: getByPath(payload, 'address.city'),
-          theme: getByPath(payload, 'settings.theme'),
-        };
-        console.log("✅ Extracted values (getByPath):", extractedValues);
-
-        // ===== FEATURE: Find All Array Fields =====
-        const arrayFields = findArrayFields(payload);
-        if (arrayFields.length > 0) {
-          console.log("📋 Array fields in payload:", arrayFields);
-        }
-
         // Send to API
-        console.log("📤 Sending to API:", transformedPayload);
         await updateMutation.mutateAsync({
           id: userId,
           data: transformedPayload,
@@ -149,7 +113,7 @@ export const useFormData = () => {
         
         return { ok: true };
       } catch (error) {
-        console.error("❌ Save error:", error);
+        console.error("Save error:", error);
         return {
           ok: false,
           error: error instanceof Error ? error : new Error(String(error)),
@@ -163,7 +127,6 @@ export const useFormData = () => {
       isDirty,
       isValid,
       dirtyFields,
-      values,
     }: {
       isDirty: boolean;
       isValid: boolean;
@@ -171,14 +134,7 @@ export const useFormData = () => {
       values: FormData;
     }) => {
       const hasDirtyFields = Object.keys(dirtyFields || {}).length > 0;
-      console.log("🔍 shouldSave check:", { 
-        isDirty, 
-        isValid, 
-        hasDirtyFields,
-        dirtyFields: JSON.parse(JSON.stringify(dirtyFields || {})),
-        willSave: (isDirty || hasDirtyFields) && isValid
-      });
-      // For nested fields demo, check isDirty OR hasDirtyFields (for nested)
+      // For nested fields, check isDirty OR hasDirtyFields
       return (isDirty || hasDirtyFields) && isValid;
     },
     [],
@@ -187,12 +143,8 @@ export const useFormData = () => {
   // Custom selectPayload that handles nested fields and arrays
   const selectPayload = useCallback(
     (values: FormData, dirtyFields: any) => {
-      console.log("📦 selectPayload called");
-      console.log("📦 dirtyFields:", JSON.stringify(dirtyFields, null, 2));
-      
       // If no dirty fields, return empty
       if (!dirtyFields || Object.keys(dirtyFields).length === 0) {
-        console.log("📦 No dirty fields, returning empty payload");
         return {};
       }
       
@@ -209,30 +161,23 @@ export const useFormData = () => {
       };
       
       // Custom extraction that handles arrays properly
-      const extractDirtyValues = (vals: any, dirty: any, path: string = ''): any => {
-        console.log(`📦 extractDirtyValues at "${path}":`, { vals: typeof vals, dirty });
-        
+      const extractDirtyValues = (vals: any, dirty: any): any => {
         if (dirty === undefined || dirty === null) return undefined;
         if (vals === undefined || vals === null) return undefined;
         
         // If dirty is exactly true, return the value
         if (dirty === true) {
-          console.log(`📦 "${path}" is dirty=true, returning value`);
           return vals;
         }
         
         // If dirty is an array (for array fields like teamMembers)
         if (Array.isArray(dirty)) {
-          console.log(`📦 "${path}" dirty is array with ${dirty.length} items`);
           if (!Array.isArray(vals)) {
-            console.log(`📦 "${path}" vals is not array, skipping`);
             return undefined;
           }
           
           // For arrays, if ANY item is dirty, return the ENTIRE array
-          // This is simpler and more reliable for autosave
           if (hasAnyDirty(dirty)) {
-            console.log(`📦 "${path}" array has dirty items, returning full array`);
             return vals;
           }
           
@@ -244,15 +189,13 @@ export const useFormData = () => {
           const result: any = {};
           
           for (const key of Object.keys(dirty)) {
-            const childPath = path ? `${path}.${key}` : key;
-            const extracted = extractDirtyValues(vals?.[key], dirty[key], childPath);
+            const extracted = extractDirtyValues(vals?.[key], dirty[key]);
             if (extracted !== undefined) {
               result[key] = extracted;
             }
           }
           
           if (Object.keys(result).length > 0) {
-            console.log(`📦 "${path}" extracted nested:`, result);
             return result;
           }
           return undefined;
@@ -261,10 +204,7 @@ export const useFormData = () => {
         return undefined;
       };
       
-      const payload = extractDirtyValues(values, dirtyFields) || {};
-      
-      console.log("📦 Final extracted payload:", JSON.stringify(payload, null, 2));
-      return payload;
+      return extractDirtyValues(values, dirtyFields) || {};
     },
     [],
   );
@@ -287,12 +227,10 @@ export const useFormData = () => {
     selectPayload,
     validateBeforeSave: "payload",
     onSaved: async (result) => {
-      console.log("💾 onSaved callback:", result);
       if (result.ok) {
         toast.success("Changes saved!");
       } else {
         toast.error("Failed to save changes");
-        console.log("❌ Save failed:", result);
       }
     },
   });
