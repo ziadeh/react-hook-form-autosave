@@ -1,8 +1,7 @@
 import React from "react";
 import { RHFArrayIdField } from "./RHFArrayIdField";
-import type { formOptions, IdLabel } from "@/types/formData.type";
+import type { IdLabel } from "@/types/formData.type";
 import { Label } from "./ui/label";
-import { Input } from "./ui/input";
 import { Checkbox } from "./ui/checkbox";
 interface Props {
   skillsOptions: IdLabel[];

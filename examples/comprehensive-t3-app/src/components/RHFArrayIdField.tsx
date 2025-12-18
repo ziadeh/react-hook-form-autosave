@@ -15,21 +15,20 @@ export function RHFArrayIdField({
     setValue: (next: IdItem[]) => void,
     error?: string,
   ) => React.ReactElement;
-  optimistic?: boolean;
 }) {
   const { control, setValue: rhfSetValue } = useFormContext();
 
   return (
     <Controller
       control={control}
-      name={name as any}
+      name={name}
       render={({ field, fieldState }) => {
         const safeValue: IdItem[] = Array.isArray(field.value)
-          ? field.value
+          ? (field.value as IdItem[])
           : [];
         const setValue = (next: IdItem[]) => {
           field.onChange(next);
-          rhfSetValue(name as any, next, {
+          rhfSetValue(name, next, {
             shouldDirty: true,
             shouldTouch: true,
             shouldValidate: false,

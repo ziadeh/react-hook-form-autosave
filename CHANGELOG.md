@@ -2,6 +2,143 @@
 
 All notable changes to **react-hook-form-autosave** will be documented here.
 
+## [3.1.0] - 2025-12-17
+
+### 🎉 Major Feature Release - Nested Fields Support
+
+This release introduces comprehensive utilities for handling deeply nested form fields, complex object structures, and arrays of objects.
+
+### ⭐ New Features
+
+#### Nested Field Path Utilities (`fieldPath`)
+- **NEW**: `parsePath(path)` - Parse dot/bracket notation paths into segments
+- **NEW**: `joinPath(segments)` - Join path segments back into a string
+- **NEW**: `getByPath(obj, path)` - Safely get values at nested paths
+- **NEW**: `setByPath(obj, path, value)` - Immutably set values at nested paths
+- **NEW**: `deleteByPath(obj, path)` - Immutably delete values at nested paths
+- **NEW**: `hasPath(obj, path)` - Check if a path exists in an object
+- **NEW**: `getParentPath(path)` - Get the parent path of a nested path
+- **NEW**: `getFieldName(path)` - Get the field name from a path
+- **NEW**: `isParentPath(parent, child)` - Check parent/child path relationships
+- **NEW**: `isChildPath(child, parent)` - Check child/parent path relationships
+- **NEW**: `getAllPaths(obj, options)` - Get all paths in an object
+- **NEW**: `normalizePath(path)` - Normalize path format
+- **NEW**: `cloneAlongPath(obj, path)` - Clone object along a specific path
+
+#### Nested Key Mapping Utilities (`nestedKeyMap`)
+- **NEW**: `mapNestedKeys(payload, keyMap, options)` - Transform nested field keys for API compatibility
+- **NEW**: `createNestedKeyMapper(keyMap, options)` - Create reusable key mapper functions
+- **NEW**: `reverseNestedKeyMap(keyMap)` - Reverse a key map for bidirectional transformation
+- **NEW**: `flattenObject(obj, separator)` - Flatten nested objects to dot notation
+- **NEW**: `unflattenObject(obj, separator)` - Unflatten dot notation back to nested objects
+- **NEW**: `mergeNestedKeyMaps(...maps)` - Merge multiple key maps
+- **NEW**: `validateNestedKeyMap(keyMap)` - Validate key map configuration
+
+#### Nested Array Diffing Utilities (`nestedArrayDiff`)
+- **NEW**: `diffArrays(oldArray, newArray, options)` - Compute detailed array differences
+- **NEW**: `applyArrayDiff(array, diff)` - Apply a diff to reconstruct an array
+- **NEW**: `detectNestedArrayChanges(oldObj, newObj, arrayPaths, options)` - Detect changes in nested arrays
+- **NEW**: `findArrayFields(obj)` - Auto-detect array fields in an object
+- **NEW**: `summarizeArrayDiff(diff)` - Get human-readable diff summary
+- **NEW**: `mergeArrayDiffs(diffs)` - Merge multiple array diffs
+
+#### Deep Merge Utilities (`deepMerge`)
+- **NEW**: `deepMerge(target, source, options)` - Deep merge objects with configurable array strategies
+- **NEW**: `deepUpdate(target, path, value, options)` - Immutably update nested values
+- **NEW**: `cloneDeep(obj)` - Deep clone any object
+- **NEW**: `mergeAtPath(target, path, source, options)` - Merge at a specific path
+- **NEW**: `isDeepEqual(a, b)` - Deep equality comparison
+- **NEW**: `getDiff(oldObj, newObj)` - Get differences between objects
+- **NEW**: `applyDiff(obj, diff)` - Apply a diff to an object
+
+### 🔧 Improvements
+
+#### Undo/Redo System
+- **IMPROVED**: Signature-based change detection for more reliable undo tracking
+- **IMPROVED**: Better handling of form value cloning to prevent reference issues
+- **IMPROVED**: Enhanced `diffToPatches` for nested object and array support
+- **IMPROVED**: Recursive key sorting in `stableStringify` for consistent signatures
+- **NOTE**: Undo/redo works reliably for simple fields; nested object support is in progress
+
+#### Diff Utilities
+- **IMPROVED**: `diffToPatches` now properly handles nested objects and arrays
+- **IMPROVED**: Better null/undefined value handling in diff operations
+- **IMPROVED**: Arrays are now treated as atomic units in diff operations
+
+#### Example App
+- **ENHANCED**: Comprehensive T3 example with nested fields demo
+- **ADDED**: Interactive nested form with profile, address, social links, settings, and team members
+- **ADDED**: Real-time array change detection with toast notifications
+- **ADDED**: Custom `selectPayload` implementation for nested dirty field extraction
+- **ADDED**: Key mapping demonstration (frontend paths → API keys)
+
+### 📚 Documentation
+- **NEW**: `docs/NESTED_FIELDS.md` - Comprehensive guide for nested field utilities
+- **NEW**: `PROGRESS_SUMMARY.md` - Project progress and feature overview
+- **NEW**: `examples/comprehensive-t3-app/NESTED_FIELDS_DEMO.md` - Demo documentation
+- **NEW**: `examples/comprehensive-t3-app/TESTING_CHECKLIST.md` - Testing guide
+
+### 🧪 Testing
+- **NEW**: 100% test coverage for all nested field utilities
+- **NEW**: Comprehensive unit tests for `fieldPath`, `nestedKeyMap`, `nestedArrayDiff`, `deepMerge`
+- **NEW**: Export verification tests for all new utilities
+- **TOTAL**: 753 tests passing
+
+### 📦 Exports
+All new utilities are exported from the main package:
+
+```typescript
+import {
+  // Field path utilities
+  parsePath, joinPath, getByPath, setByPath, deleteByPath,
+  hasPath, getParentPath, getFieldName, isParentPath, isChildPath,
+  getAllPaths, normalizePath, cloneAlongPath,
+  
+  // Nested key mapping
+  mapNestedKeys, createNestedKeyMapper, reverseNestedKeyMap,
+  flattenObject, unflattenObject, mergeNestedKeyMaps, validateNestedKeyMap,
+  
+  // Array diffing
+  diffArrays, applyArrayDiff, detectNestedArrayChanges,
+  findArrayFields, summarizeArrayDiff, mergeArrayDiffs,
+  
+  // Deep merge
+  deepMerge, deepUpdate, cloneDeep, mergeAtPath,
+  isDeepEqual, getDiff, applyDiff,
+} from 'react-hook-form-autosave';
+```
+
+### Migration Notes
+
+No breaking changes. All new features are additive and backwards compatible.
+
+#### Recommended Usage for Nested Forms
+
+```typescript
+const autosave = useRhfAutosave({
+  form,
+  transport: async (payload) => {
+    // Transform nested keys for your API
+    const apiPayload = mapNestedKeys(payload, {
+      'profile.firstName': 'first_name',
+      'address.zipCode': 'postal_code',
+    });
+    
+    // Detect array changes
+    const changes = detectNestedArrayChanges(baseline, payload, ['items']);
+    
+    await api.save(apiPayload);
+    return { ok: true };
+  },
+  // Custom payload selection for nested fields
+  selectPayload: (values, dirtyFields) => {
+    // Your custom logic to extract dirty nested values
+  },
+});
+```
+
+---
+
 ## [3.0.5] - 2025-01-14
 
 ### Fixed

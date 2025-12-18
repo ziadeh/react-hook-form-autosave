@@ -49,9 +49,16 @@ export function deepEqual(a: any, b: any): boolean {
 }
 
 export function diffToPatches(prev: any, next: any, basePath = ""): Patch[] {
+  // Handle nullish values
+  if (prev === next) return [];
+  if (prev === undefined && next === undefined) return [];
+  if (prev === null && next === null) return [];
+  
+  // If deeply equal, no patches
   if (deepEqual(prev, next)) return [];
 
-  if (Array.isArray(prev) && Array.isArray(next)) {
+  // Handle arrays - always treat as atomic unit
+  if (Array.isArray(prev) || Array.isArray(next)) {
     return [
       {
         name: basePath,
@@ -67,6 +74,7 @@ export function diffToPatches(prev: any, next: any, basePath = ""): Patch[] {
   const nextIsObj =
     isObject(next) && !Array.isArray(next) && !(next instanceof Date);
 
+  // If one is object and the other isn't, or both are primitives
   if (!prevIsObj || !nextIsObj) {
     return [
       {
@@ -78,18 +86,21 @@ export function diffToPatches(prev: any, next: any, basePath = ""): Patch[] {
     ];
   }
 
+  // Both are objects - recurse into them
   const patches: Patch[] = [];
   const keys = new Set<string>([
     ...Object.keys(prev ?? {}),
     ...Object.keys(next ?? {}),
   ]);
+  
   for (const k of keys) {
     const childPath = basePath ? `${basePath}.${k}` : k;
     const p = (prev ?? {})[k];
     const n = (next ?? {})[k];
 
     if (!deepEqual(p, n)) {
-      if (Array.isArray(p) && Array.isArray(n)) {
+      if (Array.isArray(p) || Array.isArray(n)) {
+        // Arrays are atomic
         patches.push({
           name: childPath,
           prevValue: p,
@@ -98,7 +109,7 @@ export function diffToPatches(prev: any, next: any, basePath = ""): Patch[] {
             ? childPath.split(".")[0]
             : childPath,
         });
-      } else if (p instanceof Date && n instanceof Date) {
+      } else if (p instanceof Date || n instanceof Date) {
         patches.push({
           name: childPath,
           prevValue: p,
@@ -108,8 +119,10 @@ export function diffToPatches(prev: any, next: any, basePath = ""): Patch[] {
             : childPath,
         });
       } else if (isObject(p) && isObject(n)) {
+        // Recurse into nested objects
         patches.push(...diffToPatches(p, n, childPath));
       } else {
+        // Primitive values or type mismatch
         patches.push({
           name: childPath,
           prevValue: p,
@@ -125,10 +138,28 @@ export function diffToPatches(prev: any, next: any, basePath = ""): Patch[] {
 }
 
 export function stableStringify(obj: Record<string, any>): string {
+  // Handle non-objects
+  if (obj === null || obj === undefined) return String(obj);
+  if (typeof obj !== 'object') return String(obj);
+  if (Array.isArray(obj)) return JSON.stringify(obj);
+  
+  // Recursively sort keys for nested objects
+  const sortedObj = sortObjectKeys(obj);
+  return JSON.stringify(sortedObj);
+}
+
+function sortObjectKeys(obj: any): any {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(sortObjectKeys);
+  if (obj instanceof Date) return obj;
+  
   const keys = Object.keys(obj).sort();
-  const out: Record<string, any> = {};
-  for (const k of keys) out[k] = obj[k];
-  return JSON.stringify(out);
+  const result: Record<string, any> = {};
+  for (const k of keys) {
+    result[k] = sortObjectKeys(obj[k]);
+  }
+  return result;
 }
 
 export function isEditableElement(el: Element | null): boolean {

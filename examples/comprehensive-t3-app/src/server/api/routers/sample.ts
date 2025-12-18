@@ -10,17 +10,49 @@ import {
 const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
 const formData: FormData = {
-  fullName: "John Smith",
-  email: "mail@domain.com",
+  profile: {
+    firstName: "John",
+    lastName: "Smith",
+    email: "mail@domain.com",
+    bio: "This is a sample bio with nested fields!",
+  },
+  address: {
+    street: "123 Main St",
+    city: "San Francisco",
+    state: "CA",
+    zipCode: "94102",
+    country: "United States",
+  },
+  socialLinks: {
+    github: "https://github.com/johndoe",
+    linkedin: "https://linkedin.com/in/johndoe",
+    twitter: "",
+    website: "",
+  },
+  settings: {
+    notifications: true,
+    newsletter: false,
+    theme: "dark",
+  },
+  teamMembers: [
+    {
+      id: 1,
+      name: "Alice Johnson",
+      role: "Lead Developer",
+      email: "alice@example.com",
+    },
+    {
+      id: 2,
+      name: "Bob Williams",
+      role: "Designer",
+      email: "bob@example.com",
+    },
+  ],
   skills: [],
-  bio: "This is a sample bio",
-  role: undefined,
-  notifications: false,
-  newsletter: false,
-  yearsOfExperience: undefined,
+  role: "developer",
+  yearsOfExperience: 5,
   availableFrom: undefined,
-  country: undefined,
-  hobbies: [],
+  hobbies: ["coding", "reading"],
   isAnyInputFocused: false,
 };
 
@@ -43,8 +75,8 @@ function pruneUndefined<T extends object>(obj: T): Partial<T> {
 }
 
 export const sampleRouter = createTRPCRouter({
-  getData: publicProcedure.input(z.object({ id: z.string() })).query(() => {
-    sleep(500);
+  getData: publicProcedure.input(z.object({ id: z.string() })).query(async () => {
+    await sleep(500);
     return formData;
   }),
   updateForm: publicProcedure
@@ -58,18 +90,26 @@ export const sampleRouter = createTRPCRouter({
       const { id, data } = input;
       const updateData = pruneUndefined(data);
 
-      // Log keyMap transformation
-      if ("country_code" in updateData) {
-        console.log("✨ keyMap transformation detected:");
-        console.log("  Frontend field: 'country'");
-        console.log(
-          "  Backend received: 'country_code' =",
-          updateData.country_code,
-        );
-      }
-
+      // Log nested field transformations
       console.log("📦 Full update payload:", updateData);
-      sleep(500);
+      
+      // Check for mapNestedKeys transformations
+      if ("first_name" in updateData) {
+        console.log("✨ Nested key transformation detected:");
+        console.log("  Frontend: profile.firstName → Backend: first_name");
+      }
+      if ("email_address" in updateData) {
+        console.log("✨ Nested key transformation detected:");
+        console.log("  Frontend: profile.email → Backend: email_address");
+      }
+      if ("address" in updateData && typeof updateData.address === "object") {
+        const addr = updateData.address as Record<string, unknown>;
+        if ("postal_code" in addr) {
+          console.log("✨ Nested key transformation detected:");
+          console.log("  Frontend: address.zipCode → Backend: address.postal_code");
+        }
+      }
+      await sleep(500);
       // throw new Error("errorMessage");
       return { id, ...updateData };
     }),
@@ -78,27 +118,27 @@ export const sampleRouter = createTRPCRouter({
   }),
   addSkill: publicProcedure
     .input(SkillInputSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async () => {
       try {
-        sleep(500);
+        await sleep(500);
         // throw new Error("errorMessage");
         return { ok: true };
-      } catch (error: any) {
+      } catch (error: unknown) {
         const errorMessage =
-          error.response?.data?.message || "Failed to add skill";
+          (error as { response?: { data?: { message?: string } } }).response?.data?.message ?? "Failed to add skill";
         throw new Error(errorMessage);
       }
     }),
   removeSkill: publicProcedure
     .input(SkillInputSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async () => {
       try {
-        sleep(500);
+        await sleep(500);
         // throw new Error("errorMessage");
         return { ok: true };
-      } catch (error: any) {
+      } catch (error: unknown) {
         const errorMessage =
-          error.response?.data?.message || "Failed to remove skill";
+          (error as { response?: { data?: { message?: string } } }).response?.data?.message ?? "Failed to remove skill";
         throw new Error(errorMessage);
       }
     }),

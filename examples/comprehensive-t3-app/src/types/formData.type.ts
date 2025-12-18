@@ -2,34 +2,68 @@ import { z } from "zod";
 
 export type IdLabel = { id: number; label: string };
 
-export const FormDataSchema = z.object({
-  // Basic text fields
-  fullName: z.string().min(5),
-  email: z.string().email(),
+// Nested field schemas
+const ProfileSchema = z.object({
+  firstName: z.string().min(2),
+  lastName: z.string().min(2),
   bio: z.string().min(5),
+  email: z.string().email(),
+});
 
-  // Array field with diffMap
-  skills: z.array(z.object({ id: z.number() })).min(1, {
-    message: "At least one skill is required",
-  }),
+const AddressSchema = z.object({
+  street: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  zipCode: z.string().optional(),
+  country: z.string().optional(),
+});
 
-  // Radio button
-  role: z.enum(["developer", "designer", "manager", "other"]).optional(),
+const SocialLinksSchema = z.object({
+  github: z.string().url().optional().or(z.literal("")),
+  linkedin: z.string().url().optional().or(z.literal("")),
+  twitter: z.string().url().optional().or(z.literal("")),
+  website: z.string().url().optional().or(z.literal("")),
+});
 
-  // Checkboxes
+const SettingsSchema = z.object({
   notifications: z.boolean().optional(),
   newsletter: z.boolean().optional(),
+  theme: z.enum(["light", "dark", "system"]).optional(),
+});
 
-  // Number field
+const TeamMemberSchema = z.object({
+  id: z.number(),
+  name: z.string().min(2),
+  role: z.string(),
+  email: z.string().email().optional().or(z.literal("")),
+});
+
+export const FormDataSchema = z.object({
+  // Nested profile object (NEW!)
+  profile: ProfileSchema,
+
+  // Nested address (NEW!)
+  address: AddressSchema.optional(),
+
+  // Nested social links (NEW!)
+  socialLinks: SocialLinksSchema.optional(),
+
+  // Nested settings (NEW!)
+  settings: SettingsSchema.optional(),
+
+  // Array of nested objects (NEW!)
+  teamMembers: z.array(TeamMemberSchema).optional(),
+
+  // Legacy fields (kept for backwards compatibility)
+  // Removed min(1) requirement for demo purposes
+  skills: z.array(z.object({ id: z.number() })),
+
+  role: z.enum(["developer", "designer", "manager", "other"]).optional(),
+
   yearsOfExperience: z.number().min(0).max(50).optional(),
 
-  // Date field (stored as string)
   availableFrom: z.string().optional(),
 
-  // Select field with keyMap example
-  country: z.string().optional(),
-
-  // Multi-line array (not diffMap)
   hobbies: z.array(z.string()).optional(),
 
   // Internal field
@@ -37,16 +71,14 @@ export const FormDataSchema = z.object({
 });
 
 export type FormData = z.infer<typeof FormDataSchema>;
+export type Profile = z.infer<typeof ProfileSchema>;
+export type Address = z.infer<typeof AddressSchema>;
+export type SocialLinks = z.infer<typeof SocialLinksSchema>;
+export type Settings = z.infer<typeof SettingsSchema>;
+export type TeamMember = z.infer<typeof TeamMemberSchema>;
 
-// Schema for updates - accepts both original fields and transformed fields (via keyMap)
-export const FormDataUpdateSchema = FormDataSchema.partial()
-  .extend({
-    // Accept country_code (transformed from country via keyMap)
-    country_code: z.string().optional(),
-  })
-  .refine((obj) => Object.keys(obj).length > 0, {
-    message: "Provide at least one field to update",
-  });
+// Schema for updates - accepts both original fields and transformed fields (via mapNestedKeys)
+export const FormDataUpdateSchema = z.object({}).passthrough();
 
 export type formOptions = {
   skillsOptions?: { id: number; label: string }[];

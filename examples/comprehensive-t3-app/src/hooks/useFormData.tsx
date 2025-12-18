@@ -1,5 +1,11 @@
-import { useCallback, useEffect } from "react";
-import { type Transport, useRhfAutosave } from "react-hook-form-autosave";
+import { useCallback, useEffect, useRef } from "react";
+import {
+  type Transport,
+  type SaveContext,
+  useRhfAutosave,
+  mapNestedKeys,
+  detectNestedArrayChanges,
+} from "react-hook-form-autosave";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
@@ -18,6 +24,9 @@ export const useFormData = () => {
     defaultValues: DefaultFormValues(),
     resolver: zodResolver(FormDataSchema),
     mode: "onChange",
+    // Prevent validation during render
+    criteriaMode: "firstError",
+    reValidateMode: "onChange",
   });
 
   const { data: sampleFormData, isLoading } = api.sample.getData.useQuery(
@@ -31,111 +40,224 @@ export const useFormData = () => {
   const { data: skillsOptions } = api.sample.getSkillsOptions.useQuery();
   const updateMutation = api.sample.updateForm.useMutation();
   const { mutateAsync: addSkill } = api.sample.addSkill.useMutation();
-  const { mutateAsync: removeSkill } = api.sample.removeSkill.useMutation();
 
-  // Create stable transport function
+  // Store baseline for array diffing
+  const baselineRef = useRef<FormData | null>(null);
+  
+  // Update baseline when form is reset/loaded
+  useEffect(() => {
+    if (sampleFormData && !isLoading) {
+      baselineRef.current = sampleFormData;
+    }
+  }, [sampleFormData, isLoading]);
+
+  // Create stable transport function with nested field support
   const transport: Transport = useCallback(
-    async (payload: any) => {
-      console.log("🚀 TRANSPORT CALLED - Sending to API:", payload);
-      try {
-        const { skills, isAnyInputFocused, ...rest } = payload;
+    async (payload: Record<string, unknown>, _ctx?: SaveContext) => {
+      // If payload is empty, just return success without making API call
+      if (!payload || Object.keys(payload).length === 0) {
+        return { ok: true };
+      }
 
+      try {
+        // Transform nested form fields to match API structure
+        const keyMapConfig = {
+          'profile.firstName': 'first_name',
+          'profile.lastName': 'last_name', 
+          'profile.email': 'email_address',
+          'profile.bio': 'biography',
+          'address.zipCode': 'postal_code',
+          'address.street': 'street_address',
+          'socialLinks.github': 'github_url',
+          'socialLinks.linkedin': 'linkedin_url',
+          'socialLinks.twitter': 'twitter_url',
+          'socialLinks.website': 'website_url',
+          'settings.notifications': 'notify_enabled',
+          'settings.newsletter': 'newsletter_subscribed',
+        };
+
+        const transformedPayload = mapNestedKeys(payload, keyMapConfig, { 
+          preserveUnmapped: true 
+        });
+
+        // Detect array changes for user feedback
+        if (payload.teamMembers && baselineRef.current?.teamMembers) {
+          const arrayChanges = detectNestedArrayChanges(
+            { teamMembers: baselineRef.current.teamMembers },
+            { teamMembers: payload.teamMembers },
+            ['teamMembers'],
+            { identityKey: 'id', trackFieldChanges: true }
+          );
+          
+          if (arrayChanges.teamMembers?.hasChanges) {
+            const { added, removed, modified } = arrayChanges.teamMembers;
+            const parts = [];
+            if (added.length > 0) parts.push(`+${added.length} added`);
+            if (removed.length > 0) parts.push(`-${removed.length} removed`);
+            if (modified.length > 0) parts.push(`${modified.length} modified`);
+            if (parts.length > 0) {
+              toast.info(`Team Members: ${parts.join(', ')}`);
+            }
+          }
+        }
+
+        // Send to API
         await updateMutation.mutateAsync({
           id: userId,
-          data: rest,
+          data: transformedPayload,
         });
+        
+        // Update baseline after successful save
+        const currentValues = form.getValues();
+        baselineRef.current = currentValues;
+        
         return { ok: true };
       } catch (error) {
+        console.error("Save error:", error);
         return {
           ok: false,
           error: error instanceof Error ? error : new Error(String(error)),
         };
       }
     },
-    [userId, updateMutation],
+    [updateMutation, form],
   );
   const shouldSave = useCallback(
     ({
       isDirty,
       isValid,
-      values,
+      dirtyFields,
     }: {
       isDirty: boolean;
       isValid: boolean;
+      dirtyFields: Record<string, unknown>;
       values: FormData;
     }) => {
-      console.log("shouldSave", isDirty, isValid, values.isAnyInputFocused);
-      return isDirty && isValid && !values.isAnyInputFocused;
+      const hasDirtyFields = Object.keys(dirtyFields ?? {}).length > 0;
+      // For nested fields, check isDirty OR hasDirtyFields
+      return (isDirty || hasDirtyFields) && isValid;
     },
     [],
   );
-  // Setup autosave
+
+  // Custom selectPayload that handles nested fields and arrays
+  const selectPayload = useCallback(
+    (values: FormData, dirtyFields: Record<string, unknown>) => {
+      // If no dirty fields, return empty
+      if (!dirtyFields || Object.keys(dirtyFields).length === 0) {
+        return {};
+      }
+
+      // Helper to check if any value in an object/array is truthy
+      const hasAnyDirty = (obj: unknown): boolean => {
+        if (obj === true) return true;
+        if (Array.isArray(obj)) {
+          return obj.some(item => hasAnyDirty(item));
+        }
+        if (obj && typeof obj === 'object') {
+          return Object.values(obj).some(val => hasAnyDirty(val));
+        }
+        return false;
+      };
+
+      // Custom extraction that handles arrays properly
+      const extractDirtyValues = (vals: unknown, dirty: unknown): unknown => {
+        if (dirty === undefined || dirty === null) return undefined;
+        if (vals === undefined || vals === null) return undefined;
+
+        // If dirty is exactly true, return the value
+        if (dirty === true) {
+          return vals;
+        }
+
+        // If dirty is an array (for array fields like teamMembers)
+        if (Array.isArray(dirty)) {
+          if (!Array.isArray(vals)) {
+            return undefined;
+          }
+
+          // For arrays, if ANY item is dirty, return the ENTIRE array
+          if (hasAnyDirty(dirty)) {
+            return vals;
+          }
+
+          return undefined;
+        }
+
+        // If dirty is an object, recurse into it
+        if (typeof dirty === 'object') {
+          const result: Record<string, unknown> = {};
+
+          for (const key of Object.keys(dirty)) {
+            const dirtyObj = dirty as Record<string, unknown>;
+            const valsObj = vals as Record<string, unknown>;
+            const extracted = extractDirtyValues(valsObj?.[key], dirtyObj[key]);
+            if (extracted !== undefined) {
+              result[key] = extracted;
+            }
+          }
+
+          if (Object.keys(result).length > 0) {
+            return result;
+          }
+          return undefined;
+        }
+
+        return undefined;
+      };
+
+      return extractDirtyValues(values, dirtyFields) ?? {};
+    },
+    [],
+  );
+  // Setup autosave with nested fields support
   const autosave = useRhfAutosave<FormData>({
     form,
     transport,
+    // Re-enable undo/redo with nested field support
     undo: {
       enabled: true,
-      ignoreHistoryOps: false,
-      hotkeys: true, // enable Cmd/Ctrl+Z
-      captureInInputs: false, // don't hijack while typing into inputs (default)
+      hotkeys: true, // Cmd/Ctrl+Z to undo, Cmd/Ctrl+Shift+Z to redo
+      captureInInputs: true, // Capture undo/redo even when focused on inputs
     },
     config: {
-      debug: true,
-      debounceMs: 600,
-      enableMetrics: true, // Enable metrics collection
+      debug: process.env.NODE_ENV === "development",
+      debounceMs: 800,
+      enableMetrics: true,
     },
     shouldSave,
+    selectPayload,
     validateBeforeSave: "payload",
-    keyMap: {
-      // Transform "country" to "country_code" when saving to server
-      country: ["country_code", String],
-    },
-    diffMap: {
-      skills: {
-        idOf: (skill) => skill.id,
-        onAdd: async ({ id }) => {
-          console.log("➕ diffMap: Adding skill with ID:", id);
-          await addSkill({
-            userId: Number(userId),
-            skillId: Number(id),
-          });
-          toast.success("Skill added via diffMap callback");
-        },
-        onRemove: async ({ id }) => {
-          console.log("➖ diffMap: Removing skill with ID:", id);
-          await removeSkill({
-            userId: Number(userId),
-            skillId: Number(id),
-          });
-          toast.info("Skill removed via diffMap callback");
-        },
-      },
-    },
-    onSaved: async (result) => {
-      console.log({ result });
+    onSaved: (result: { ok: boolean; error?: Error }) => {
       if (result.ok) {
-        toast.success("Form data saved successfully");
+        toast.success("Changes saved!");
       } else {
-        toast.error("Could not save form data");
+        toast.error("Failed to save changes");
       }
     },
   });
 
   useEffect(() => {
-    if (sampleFormData) {
-      form.reset({
-        ...sampleFormData,
-        isAnyInputFocused: false,
-      });
+    if (sampleFormData && !isLoading) {
+      // Use setTimeout to avoid state updates during render
+      const timer = setTimeout(() => {
+        form.reset({
+          ...sampleFormData,
+          isAnyInputFocused: false,
+        });
+      }, 0);
+
+      return () => clearTimeout(timer);
     }
-  }, [form, sampleFormData]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sampleFormData, isLoading]); // form is stable and doesn't need to be in deps
 
   return {
     form,
     userId,
     isLoading,
     options: {
-      skillsOptions,
+      skillsOptions: skillsOptions ?? [],
     } as formOptions,
     sampleFormData,
     autosave,

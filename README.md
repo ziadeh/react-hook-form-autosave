@@ -21,6 +21,7 @@ const { isSaving, hasPendingChanges, undo, redo } = useRhfAutosave({
 ✅ **Undo/Redo support** - Let users undo mistakes with Cmd/Ctrl+Z  
 ✅ **Array field handling** - Smart diffing for add/remove operations  
 ✅ **Auto-hydration** - Seamlessly sync when data loads from API  
+✅ **Nested field utilities** - Full support for deeply nested objects and arrays  
 ✅ **Production ready** - Battle-tested with proper error handling  
 
 ---
@@ -33,6 +34,7 @@ const { isSaving, hasPendingChanges, undo, redo } = useRhfAutosave({
 - [Core Features](#-core-features)
 - [Basic Examples](#-basic-examples)
 - [Common Patterns](#-common-patterns)
+- [Nested Fields](#-nested-fields)
 - [Advanced Features](#-advanced-features)
 - [API Reference](#-api-reference)
 - [Framework Integration](#-framework-integration)
@@ -406,6 +408,193 @@ function MyForm() {
   );
 }
 ```
+
+---
+
+## 🏗️ Nested Fields
+
+### Overview
+
+Full support for deeply nested form structures with utilities for path manipulation, key mapping, array diffing, and deep merging.
+
+### Path Utilities
+
+Work with nested field paths using dot and bracket notation:
+
+```tsx
+import { getByPath, setByPath, getAllPaths } from 'react-hook-form-autosave';
+
+const formData = {
+  profile: { firstName: 'John', lastName: 'Doe' },
+  address: { city: 'NYC', zip: '10001' },
+  tags: ['react', 'typescript']
+};
+
+// Get nested values safely
+getByPath(formData, 'profile.firstName'); // 'John'
+getByPath(formData, 'tags[0]');           // 'react'
+
+// Set nested values immutably
+const updated = setByPath(formData, 'profile.firstName', 'Jane');
+
+// Get all paths in an object
+getAllPaths(formData); // ['profile.firstName', 'profile.lastName', 'address.city', ...]
+```
+
+### Nested Key Mapping
+
+Transform nested form fields to match your API structure:
+
+```tsx
+import { mapNestedKeys } from 'react-hook-form-autosave';
+
+const { isSaving } = useRhfAutosave({
+  form,
+  transport: async (payload) => {
+    // Transform nested paths to API keys
+    const apiPayload = mapNestedKeys(payload, {
+      'profile.firstName': 'first_name',
+      'profile.lastName': 'last_name',
+      'address.zipCode': 'postal_code',
+      'settings.notifications': 'notify_enabled',
+    }, { preserveUnmapped: true });
+
+    // Form: { profile: { firstName: 'John' } }
+    // API:  { first_name: 'John' }
+    
+    await api.save(apiPayload);
+    return { ok: true };
+  },
+});
+```
+
+### Array Change Detection
+
+Detect what changed in arrays of objects:
+
+```tsx
+import { detectNestedArrayChanges } from 'react-hook-form-autosave';
+
+const { isSaving } = useRhfAutosave({
+  form,
+  transport: async (payload) => {
+    // Compare with baseline to find changes
+    const changes = detectNestedArrayChanges(
+      baseline,
+      payload,
+      ['teamMembers', 'items'],
+      { identityKey: 'id', trackFieldChanges: true }
+    );
+
+    if (changes.teamMembers?.hasChanges) {
+      const { added, removed, modified } = changes.teamMembers;
+      console.log(`+${added.length} added, -${removed.length} removed, ${modified.length} modified`);
+    }
+
+    await api.save(payload);
+    return { ok: true };
+  },
+});
+```
+
+### Custom Payload Selection for Nested Forms
+
+Handle React Hook Form's `dirtyFields` for nested structures:
+
+```tsx
+const { isSaving } = useRhfAutosave({
+  form,
+  transport,
+  selectPayload: (values, dirtyFields) => {
+    // Helper to check if any nested value is dirty
+    const hasAnyDirty = (obj) => {
+      if (obj === true) return true;
+      if (Array.isArray(obj)) return obj.some(hasAnyDirty);
+      if (obj && typeof obj === 'object') {
+        return Object.values(obj).some(hasAnyDirty);
+      }
+      return false;
+    };
+
+    // Extract only dirty values, handling nested structures
+    const extractDirty = (vals, dirty) => {
+      if (dirty === true) return vals;
+      if (Array.isArray(dirty) && hasAnyDirty(dirty)) return vals;
+      if (typeof dirty === 'object') {
+        const result = {};
+        for (const key of Object.keys(dirty)) {
+          const extracted = extractDirty(vals?.[key], dirty[key]);
+          if (extracted !== undefined) result[key] = extracted;
+        }
+        return Object.keys(result).length > 0 ? result : undefined;
+      }
+      return undefined;
+    };
+
+    return extractDirty(values, dirtyFields) || {};
+  },
+});
+```
+
+### Deep Merge Utilities
+
+Merge nested objects with various strategies:
+
+```tsx
+import { deepMerge, deepUpdate, isDeepEqual } from 'react-hook-form-autosave';
+
+// Deep merge with options
+const merged = deepMerge(target, source, {
+  arrayMergeStrategy: 'replace', // or 'concat', 'byId'
+  immutable: true,
+});
+
+// Update at a specific path
+const updated = deepUpdate(obj, 'user.settings.theme', 'dark');
+
+// Deep equality check
+if (!isDeepEqual(oldData, newData)) {
+  // Data has changed
+}
+```
+
+### All Nested Field Utilities
+
+```tsx
+import {
+  // Path utilities
+  parsePath,        // Parse 'user.name' → ['user', 'name']
+  joinPath,         // Join ['user', 'name'] → 'user.name'
+  getByPath,        // Get value at path
+  setByPath,        // Set value at path (immutable)
+  deleteByPath,     // Delete value at path
+  hasPath,          // Check if path exists
+  getAllPaths,      // Get all paths in object
+
+  // Key mapping
+  mapNestedKeys,           // Transform keys for API
+  createNestedKeyMapper,   // Create reusable mapper
+  reverseNestedKeyMap,     // Reverse mapping direction
+  flattenObject,           // Flatten to dot notation
+  unflattenObject,         // Unflatten from dot notation
+
+  // Array diffing
+  diffArrays,                  // Diff two arrays
+  detectNestedArrayChanges,    // Detect changes in nested arrays
+  findArrayFields,             // Find array fields in object
+  applyArrayDiff,              // Apply diff to array
+
+  // Deep merge
+  deepMerge,      // Merge objects deeply
+  deepUpdate,     // Update at path
+  cloneDeep,      // Deep clone
+  isDeepEqual,    // Deep equality
+  getDiff,        // Get differences
+  applyDiff,      // Apply differences
+} from 'react-hook-form-autosave';
+```
+
+> 📖 For comprehensive documentation, see [docs/NESTED_FIELDS.md](./docs/NESTED_FIELDS.md)
 
 ---
 

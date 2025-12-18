@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/card";
 import type { FormData, formOptions } from "@/types/formData.type";
 import { useFormContext } from "react-hook-form";
+import { useCallback } from "react";
 
 interface DemoFormFieldsProps {
   options: formOptions;
@@ -39,10 +40,13 @@ export const DemoFormFields: React.FC<DemoFormFieldsProps> = ({ options }) => {
     watch,
   } = useFormContext<FormData>();
 
-  const handleFocus = () =>
+  const handleFocus = useCallback(() => {
     setValue("isAnyInputFocused", true, { shouldDirty: false });
-  const handleBlur = () =>
+  }, [setValue]);
+
+  const handleBlur = useCallback(() => {
     setValue("isAnyInputFocused", false, { shouldDirty: false });
+  }, [setValue]);
 
   return (
     <div className="w-full space-y-6">
@@ -55,29 +59,38 @@ export const DemoFormFields: React.FC<DemoFormFieldsProps> = ({ options }) => {
           <CardDescription>Text inputs with Zod validation</CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <FormField label="Full name" error={errors.fullName?.message}>
+          <FormField label="First Name" error={errors.profile?.firstName?.message}>
             <Input
               type="text"
-              placeholder="John Doe"
-              {...register("fullName")}
+              placeholder="John"
+              {...register("profile.firstName")}
               onFocus={handleFocus}
               onBlur={handleBlur}
             />
           </FormField>
-          <FormField label="Email" error={errors.email?.message}>
+          <FormField label="Last Name" error={errors.profile?.lastName?.message}>
+            <Input
+              type="text"
+              placeholder="Doe"
+              {...register("profile.lastName")}
+              onFocus={handleFocus}
+              onBlur={handleBlur}
+            />
+          </FormField>
+          <FormField label="Email" error={errors.profile?.email?.message}>
             <Input
               type="email"
               placeholder="john@example.com"
-              {...register("email")}
+              {...register("profile.email")}
               onFocus={handleFocus}
               onBlur={handleBlur}
             />
           </FormField>
           <div className="col-span-2">
-            <FormField label="Bio" error={errors.bio?.message}>
+            <FormField label="Bio" error={errors.profile?.bio?.message}>
               <Textarea
                 placeholder="Tell us about yourself..."
-                {...register("bio")}
+                {...register("profile.bio")}
                 onFocus={handleFocus}
                 onBlur={handleBlur}
                 rows={4}
@@ -103,7 +116,7 @@ export const DemoFormFields: React.FC<DemoFormFieldsProps> = ({ options }) => {
             name="skills"
             render={(value, setValue, error) => (
               <MultiSelectField
-                options={options.skillsOptions || []}
+                options={options.skillsOptions ?? []}
                 value={value}
                 onChange={setValue}
                 placeholder="Select your skills..."
@@ -111,7 +124,7 @@ export const DemoFormFields: React.FC<DemoFormFieldsProps> = ({ options }) => {
               />
             )}
           />
-          <MultipleCheckboxes skillsOptions={options.skillsOptions || []} />
+          <MultipleCheckboxes skillsOptions={options.skillsOptions ?? []} />
         </CardContent>
       </Card>
 
@@ -128,9 +141,9 @@ export const DemoFormFields: React.FC<DemoFormFieldsProps> = ({ options }) => {
         <CardContent className="space-y-6">
           <FormField label="Role" error={errors.role?.message}>
             <RadioGroup
-              value={watch("role") || ""}
+              value={watch("role") ?? ""}
               onValueChange={(value) =>
-                setValue("role", value as any, { shouldDirty: true })
+                setValue("role", value as "developer" | "designer" | "manager" | "other", { shouldDirty: true })
               }
             >
               <div className="flex items-center space-x-2">
@@ -190,13 +203,13 @@ export const DemoFormFields: React.FC<DemoFormFieldsProps> = ({ options }) => {
             <span className="text-primary">🌍</span> Location (keyMap Demo)
           </CardTitle>
           <CardDescription>
-            Field "country" is transformed to "country_code" when saving to server via keyMap
+            Field &ldquo;address.country&rdquo; demonstrates nested field mapping
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <FormField label="Country" error={errors.country?.message}>
+          <FormField label="Country" error={errors.address?.country?.message}>
             <select
-              {...register("country")}
+              {...register("address.country")}
               onFocus={handleFocus}
               onBlur={handleBlur}
               className="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 w-full rounded-md border px-3 py-2 text-sm file:border-0 file:bg-transparent file:text-sm file:font-medium focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
@@ -211,7 +224,7 @@ export const DemoFormFields: React.FC<DemoFormFieldsProps> = ({ options }) => {
             </select>
           </FormField>
           <p className="text-muted-foreground mt-2 text-xs">
-            ✨ When you save, this field is sent to the server as "country_code" (check server console logs)
+            ✨ This demonstrates nested field paths (address.country)
           </p>
         </CardContent>
       </Card>
@@ -230,9 +243,9 @@ export const DemoFormFields: React.FC<DemoFormFieldsProps> = ({ options }) => {
           <div className="border-border/50 bg-muted/30 hover:bg-muted/50 flex items-start space-x-3 rounded-lg border p-4 transition-colors">
             <Checkbox
               id="notifications"
-              checked={watch("notifications") || false}
+              checked={watch("settings.notifications") ?? false}
               onCheckedChange={(checked) =>
-                setValue("notifications", checked as boolean, {
+                setValue("settings.notifications", checked as boolean, {
                   shouldDirty: true,
                 })
               }
@@ -253,9 +266,9 @@ export const DemoFormFields: React.FC<DemoFormFieldsProps> = ({ options }) => {
           <div className="border-border/50 bg-muted/30 hover:bg-muted/50 flex items-start space-x-3 rounded-lg border p-4 transition-colors">
             <Checkbox
               id="newsletter"
-              checked={watch("newsletter") || false}
+              checked={watch("settings.newsletter") ?? false}
               onCheckedChange={(checked) =>
-                setValue("newsletter", checked as boolean, {
+                setValue("settings.newsletter", checked as boolean, {
                   shouldDirty: true,
                 })
               }
