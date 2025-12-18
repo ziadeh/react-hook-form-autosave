@@ -6,6 +6,7 @@ import type {
   UndoOp,
   UndoRedoState,
   UndoRedoAPI,
+  Patch,
 } from "../utils/types";
 import { InternalUndoManager } from "../managers/InternalUndoManager";
 import {
@@ -38,6 +39,14 @@ export function useUndoRedo<T extends FieldValues>(
 ) {
   const logger = createLogger("undo-redo", debug);
 
+  // Log immediately on each render to verify hook is called
+  if (debug) {
+    console.log("[undo-redo] Hook called", { 
+      undoOptionsEnabled: undoOptions?.enabled,
+      debug 
+    });
+  }
+
   const undoEnabled = !!undoOptions?.enabled;
   const hotkeysEnabled = undoEnabled && (undoOptions?.hotkeys ?? true);
   const captureInInputs = undoOptions?.captureInInputs ?? false;
@@ -45,8 +54,25 @@ export function useUndoRedo<T extends FieldValues>(
     undoOptions?.target ??
     (typeof document !== "undefined" ? document : (undefined as any));
 
-  // State refs
-  const initialValues = form.getValues();
+  // Helper to deep clone values (needed because RHF watch() returns mutable reference)
+  const cloneValues = useCallback((obj: any): any => {
+    if (obj === null || obj === undefined) return obj;
+    if (obj instanceof Date) return new Date(obj.getTime());
+    if (Array.isArray(obj)) return obj.map(item => cloneValues(item));
+    if (typeof obj === 'object') {
+      const clone: Record<string, any> = {};
+      for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+          clone[key] = cloneValues(obj[key]);
+        }
+      }
+      return clone;
+    }
+    return obj;
+  }, []);
+
+  // State refs - clone initial values to avoid reference issues
+  const initialValues = useMemo(() => cloneValues(form.getValues()), []);
   const lastValuesRef = useRef<any>(initialValues);
   const suppressRecordRef = useRef<UndoOp>(null);
   const undoMgrRef = useRef<InternalUndoManager | null>(null);
@@ -73,24 +99,36 @@ export function useUndoRedo<T extends FieldValues>(
     [logger]
   );
 
-  // Helper to get current form values in a flat structure
+  // Helper to get current form values in a flat structure for undo tracking
   const getCurrentValues = useCallback(() => {
     const currentValues = form.getValues();
     // Flatten nested objects for proper tracking
     const flattened: Record<string, any> = {};
 
     const flatten = (obj: any, prefix = "") => {
+      if (obj === null || obj === undefined) return;
+      
       for (const key in obj) {
+        if (!Object.prototype.hasOwnProperty.call(obj, key)) continue;
+        
         const fullKey = prefix ? `${prefix}.${key}` : key;
-        if (
-          obj[key] !== null &&
-          typeof obj[key] === "object" &&
-          !Array.isArray(obj[key]) &&
-          !(obj[key] instanceof Date)
-        ) {
-          flatten(obj[key], fullKey);
-        } else {
-          flattened[fullKey] = obj[key];
+        const value = obj[key];
+        
+        // Arrays should be stored as-is (not flattened further)
+        if (Array.isArray(value)) {
+          flattened[fullKey] = value;
+        }
+        // Dates should be stored as-is
+        else if (value instanceof Date) {
+          flattened[fullKey] = value;
+        }
+        // Plain objects should be flattened recursively
+        else if (value !== null && typeof value === "object") {
+          flatten(value, fullKey);
+        }
+        // Primitives
+        else {
+          flattened[fullKey] = value;
         }
       }
     };
@@ -101,29 +139,46 @@ export function useUndoRedo<T extends FieldValues>(
 
   // Initialize undo manager
   useEffect(() => {
-    if (!undoEnabled) return;
-    if (undoMgrRef.current) return;
+    console.log("[undo-redo] Init effect running", { undoEnabled, hasManager: !!undoMgrRef.current });
+    
+    if (!undoEnabled) {
+      console.log("[undo-redo] Undo is disabled, skipping manager init");
+      return;
+    }
+    if (undoMgrRef.current) {
+      console.log("[undo-redo] Undo manager already exists");
+      return;
+    }
+
+    console.log("[undo-redo] 🔧 Creating new undo manager");
 
     const writer = (name: string, value: unknown) => {
       // Reflect true op while applying history (helps skip recording)
       suppressRecordRef.current = lastOpRef.current ?? "undo";
 
+      // Track affected fields - include all parent paths for nested fields
       undoAffectedFieldsRef.current.add(name);
       if (name.includes(".")) {
-        undoAffectedFieldsRef.current.add(name.split(".")[0]);
+        // Add all parent paths (e.g., for "profile.firstName", add "profile")
+        const parts = name.split(".");
+        let parentPath = "";
+        for (let i = 0; i < parts.length - 1; i++) {
+          parentPath = parentPath ? `${parentPath}.${parts[i]}` : parts[i];
+          undoAffectedFieldsRef.current.add(parentPath);
+        }
       }
 
+      logger.debug(`Undo writer: setting ${name} =`, value);
+
+      // Use React Hook Form's setValue which handles nested paths
       (form as any)?.setValue?.(name, value, {
         shouldDirty: true,
         shouldTouch: true,
         shouldValidate: true,
       });
 
-      if (
-        Array.isArray(value) &&
-        value.length > 0 &&
-        (value as any)[0]?.id !== undefined
-      ) {
+      // For arrays, trigger validation after a short delay
+      if (Array.isArray(value)) {
         setTimeout(() => (form as any)?.trigger?.(name), 0);
       }
     };
@@ -133,7 +188,9 @@ export function useUndoRedo<T extends FieldValues>(
       getCurrentValues,
       updateBaselineAfterHistory
     );
-  }, [undoEnabled, updateBaselineAfterHistory, form, getCurrentValues]);
+    
+    console.log("[undo-redo] ✅ Undo manager created successfully");
+  }, [undoEnabled, updateBaselineAfterHistory, form, getCurrentValues, logger]);
 
   // Subscribe to undo manager changes for live updates
   useEffect(() => {
@@ -143,79 +200,102 @@ export function useUndoRedo<T extends FieldValues>(
     return () => unsub();
   }, [undoEnabled]);
 
-  // Record user changes (idempotent)
+  // Track the last signature to detect real changes
+  const lastSignatureRef = useRef<string>("");
+  
+  // Record user changes - use signature-based comparison which worked for simple fields
   useEffect(() => {
     if (!undoEnabled) {
-      lastValuesRef.current = values;
+      lastValuesRef.current = cloneValues(values);
       return;
     }
 
     // Skip recording while hydrating
     if (isHydratingRef.current) {
-      lastValuesRef.current = values;
+      lastValuesRef.current = cloneValues(values);
+      lastSignatureRef.current = stableStringify(values as any);
       return;
     }
 
     // If we're in the middle of applying an undo/redo operation, skip recording
-    // but clear the suppress flag so future changes can be recorded
     if (
       suppressRecordRef.current === "undo" ||
       suppressRecordRef.current === "redo"
     ) {
-      lastValuesRef.current = values;
-      // Clear suppress flag after this effect to allow next change to be recorded
+      lastValuesRef.current = cloneValues(values);
+      lastSignatureRef.current = stableStringify(values as any);
       suppressRecordRef.current = null;
       return;
     }
 
     // Skip hydrate operations
     if (suppressRecordRef.current === "hydrate") {
-      lastValuesRef.current = values;
+      lastValuesRef.current = cloneValues(values);
+      lastSignatureRef.current = stableStringify(values as any);
       suppressRecordRef.current = null;
       return;
     }
 
     noPendingGuardRef.current = false;
 
-    const mgr = undoMgrRef.current!;
+    const mgr = undoMgrRef.current;
+    if (!mgr) {
+      lastValuesRef.current = cloneValues(values);
+      return;
+    }
+    
+    // Create signature of current values
+    const currentSignature = stableStringify(values as any);
+    
+    // Initialize on first run
+    if (!lastSignatureRef.current) {
+      lastSignatureRef.current = currentSignature;
+      lastValuesRef.current = cloneValues(values);
+      logger.debug("Initialized undo tracking");
+      return;
+    }
+    
+    // Check if signature changed (meaning real change happened)
+    if (currentSignature === lastSignatureRef.current) {
+      return; // No actual change
+    }
+    
+    // Clone both for comparison - prev from ref, next from current values
     const prev = lastValuesRef.current;
-    const next = values;
+    const next = cloneValues(values);
     const patches = diffToPatches(prev, next, "");
 
+    logger.debug("Undo diff check", {
+      patchCount: patches.length,
+      patches: patches.slice(0, 3).map(p => ({ name: p.name, prev: p.prevValue, next: p.nextValue })),
+    });
+
     if (patches.length) {
-      // CRITICAL: If we can redo AND we have patches, this is a new user change after undo,
-      // so we MUST clear the future stack (the redo history) BEFORE any other checks
+      // Clear future stack if user makes new change after undo
       if (mgr.canRedo()) {
-        logger.debug("Clearing redo stack due to new user change after undo", {
-          futureLength: mgr.getState().future,
-        });
+        logger.debug("Clearing redo stack due to new user change after undo");
         mgr.clearFuture();
       }
 
-      // De-dupe identical logical state (StrictMode)
-      const nextSig = stableStringify(next as any);
-      if (nextSig !== lastRecordedValuesSigRef.current) {
-        // This is a real change from the user - record it
-        mgr.record(patches);
-        lastOpRef.current = "user";
-        lastRecordedValuesSigRef.current = nextSig;
-        noPendingGuardRef.current = false;
+      // Record the change
+      mgr.record(patches);
+      lastOpRef.current = "user";
+      noPendingGuardRef.current = false;
 
-        logger.debug("Recorded user change", {
-          patches: patches.length,
-          canUndo: mgr.canUndo(),
-          canRedo: mgr.canRedo(),
-          state: mgr.getState(),
-        });
-      } else {
-        logger.debug("Skipping duplicate change (same signature)", {
-          nextSig,
-          lastRecordedSig: lastRecordedValuesSigRef.current,
-        });
-      }
+      logger.debug("✅ Recorded user change for undo", {
+        patches: patches.length,
+        patchNames: patches.map(p => p.name),
+        canUndo: mgr.canUndo(),
+        canRedo: mgr.canRedo(),
+        state: mgr.getState(),
+      });
     }
+    
+    // Update tracking state AFTER comparison
+    lastSignatureRef.current = currentSignature;
     lastValuesRef.current = next;
-  }, [values, undoEnabled, logger]);
+    lastRecordedValuesSigRef.current = currentSignature;
+  }, [values, undoEnabled, logger, cloneValues]);
 
   // Keyboard shortcuts
   useEffect(() => {

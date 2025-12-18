@@ -149,13 +149,19 @@ export function DemoHeader({
               <div className="flex flex-wrap gap-2">
                 <Badge variant="outline" className="text-xs">autoHydrate</Badge>
                 <Badge variant="outline" className="text-xs">undo/redo</Badge>
-                <Badge variant="outline" className="text-xs">diffMap (skills)</Badge>
-                <Badge variant="outline" className="text-xs">keyMap (country→country_code)</Badge>
                 <Badge variant="outline" className="text-xs">shouldSave</Badge>
                 <Badge variant="outline" className="text-xs">validateBeforeSave</Badge>
                 <Badge variant="outline" className="text-xs">onSaved</Badge>
                 <Badge variant="outline" className="text-xs">debug mode</Badge>
                 <Badge variant="outline" className="text-xs">enableMetrics</Badge>
+              </div>
+              <p className="mt-3 mb-2 text-sm font-semibold text-foreground">🎯 Nested Field Features</p>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="default" className="text-xs bg-green-600">mapNestedKeys</Badge>
+                <Badge variant="default" className="text-xs bg-green-600">detectNestedArrayChanges</Badge>
+                <Badge variant="default" className="text-xs bg-green-600">findArrayFields</Badge>
+                <Badge variant="default" className="text-xs bg-green-600">getByPath</Badge>
+                <Badge variant="default" className="text-xs bg-green-600">custom selectPayload</Badge>
               </div>
             </div>
 

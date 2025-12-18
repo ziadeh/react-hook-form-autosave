@@ -55,9 +55,8 @@ export const FormDataSchema = z.object({
   teamMembers: z.array(TeamMemberSchema).optional(),
 
   // Legacy fields (kept for backwards compatibility)
-  skills: z.array(z.object({ id: z.number() })).min(1, {
-    message: "At least one skill is required",
-  }),
+  // Removed min(1) requirement for demo purposes
+  skills: z.array(z.object({ id: z.number() })),
 
   role: z.enum(["developer", "designer", "manager", "other"]).optional(),
 
@@ -78,15 +77,8 @@ export type SocialLinks = z.infer<typeof SocialLinksSchema>;
 export type Settings = z.infer<typeof SettingsSchema>;
 export type TeamMember = z.infer<typeof TeamMemberSchema>;
 
-// Schema for updates - accepts both original fields and transformed fields (via keyMap)
-export const FormDataUpdateSchema = FormDataSchema.partial()
-  .extend({
-    // Accept country_code (transformed from country via keyMap)
-    country_code: z.string().optional(),
-  })
-  .refine((obj) => Object.keys(obj).length > 0, {
-    message: "Provide at least one field to update",
-  });
+// Schema for updates - accepts both original fields and transformed fields (via mapNestedKeys)
+export const FormDataUpdateSchema = z.object({}).passthrough();
 
 export type formOptions = {
   skillsOptions?: { id: number; label: string }[];

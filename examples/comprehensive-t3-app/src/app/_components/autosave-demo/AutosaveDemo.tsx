@@ -1,13 +1,22 @@
 "use client";
 
 import { useFormData } from "@/hooks/useFormData";
-import React, { useState } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import { FormProvider } from "react-hook-form";
 import { DemoFormFields } from "./DemoFormFields";
 import { DemoHeader } from "./DemoHeader";
-import { NestedFormFields } from "./NestedFormFields";
+import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+
+// Dynamically import NestedFormFields with no SSR to avoid hydration issues
+const NestedFormFields = dynamic(
+  () => import("./NestedFormFields").then((mod) => mod.NestedFormFields),
+  { 
+    ssr: false,
+    loading: () => <div className="p-8 text-center text-muted-foreground">Loading nested fields...</div>
+  }
+);
 
 /**
  * AutosaveDemo - Comprehensive demonstration of react-hook-form-autosave capabilities
@@ -25,8 +34,23 @@ import { Card } from "@/components/ui/card";
  * - Debug mode
  */
 export function AutosaveDemo() {
-  const { form, options, autosave } = useFormData();
+  const { form, options, autosave, isLoading } = useFormData();
   const [activeTab, setActiveTab] = useState<"nested" | "legacy">("nested");
+  const [mounted, setMounted] = useState(false);
+
+  // Wait for client-side mount
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Don't render form until data is loaded and component is mounted
+  if (!mounted || isLoading) {
+    return (
+      <div className="w-full max-w-4xl mx-auto p-8 text-center">
+        <p className="text-muted-foreground">Loading form data...</p>
+      </div>
+    );
+  }
 
   return (
     <FormProvider {...form}>

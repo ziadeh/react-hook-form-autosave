@@ -6,9 +6,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useFormContext, useFieldArray } from "react-hook-form";
-import type { FormData, TeamMember } from "@/types/formData.type";
+import type { FormData } from "@/types/formData.type";
 import { IconPlus, IconTrash } from "@tabler/icons-react";
-import { Checkbox } from "@/components/ui/checkbox";
 
 /**
  * NestedFormFields - Demonstrates nested field capabilities
@@ -225,9 +224,11 @@ export function NestedFormFields() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center space-x-2">
-            <Checkbox
+            <input
+              type="checkbox"
               id="settings.notifications"
               {...register("settings.notifications")}
+              className="h-4 w-4 rounded border-gray-300"
             />
             <Label htmlFor="settings.notifications">
               Enable email notifications
@@ -235,9 +236,11 @@ export function NestedFormFields() {
           </div>
 
           <div className="flex items-center space-x-2">
-            <Checkbox
+            <input
+              type="checkbox"
               id="settings.newsletter"
               {...register("settings.newsletter")}
+              className="h-4 w-4 rounded border-gray-300"
             />
             <Label htmlFor="settings.newsletter">
               Subscribe to newsletter
