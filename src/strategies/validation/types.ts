@@ -1,13 +1,17 @@
 import type {
   FieldErrors,
   FieldValues,
-  UseFormReturn,
   UseFormTrigger,
 } from "react-hook-form";
 import type { SavePayload } from "../../core/types";
 
+/**
+ * A subset of UseFormReturn that contains the methods and properties
+ * needed by the autosave hook. This uses flexible typing to support
+ * different versions of react-hook-form (>=7).
+ */
 export interface FormSubset<T extends FieldValues> {
-  watch: () => T;
+  watch: (...args: any[]) => any;
   formState: {
     isDirty: boolean;
     isValid: boolean;
@@ -15,24 +19,10 @@ export interface FormSubset<T extends FieldValues> {
     isValidating: boolean;
     errors?: FieldErrors<T>;
   };
-  reset: (
-    values?: T,
-    options?: {
-      keepErrors?: boolean;
-      keepDirty?: boolean;
-      keepDirtyValues?: boolean;
-      keepValues?: boolean;
-      keepDefaultValues?: boolean;
-      keepIsSubmitted?: boolean;
-      keepTouched?: boolean;
-      keepIsValid?: boolean;
-      keepSubmitCount?: boolean;
-    }
-  ) => void;
-  getValues: UseFormReturn<T>["getValues"];
-  setValue: UseFormReturn<T>["setValue"]; // ✅ add this
-  register: UseFormReturn<T>["register"]; // ✅ add this for {...register("field")}
-
+  reset: (...args: any[]) => void;
+  getValues: (...args: any[]) => any;
+  setValue: (...args: any[]) => void;
+  register: (...args: any[]) => any;
   trigger: UseFormTrigger<T>;
 }
 
