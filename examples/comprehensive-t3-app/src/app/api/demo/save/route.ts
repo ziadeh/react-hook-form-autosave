@@ -1,14 +1,17 @@
-import { NextRequest, NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+
+type SavedData = Record<string, unknown> & { lastSaved?: string };
 
 // In-memory storage (resets on server restart)
-let savedData: any = null;
+let savedData: SavedData | null = null;
 
 export async function POST(request: NextRequest) {
   try {
     // Simulate network delay
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    const body = await request.json();
+    const body = await request.json() as Record<string, unknown>;
 
     console.log("📥 API received data:", body);
 

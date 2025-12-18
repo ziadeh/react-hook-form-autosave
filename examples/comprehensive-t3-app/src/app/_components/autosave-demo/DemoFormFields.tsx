@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/card";
 import type { FormData, formOptions } from "@/types/formData.type";
 import { useFormContext } from "react-hook-form";
+import { useCallback } from "react";
 
 interface DemoFormFieldsProps {
   options: formOptions;
@@ -39,10 +40,13 @@ export const DemoFormFields: React.FC<DemoFormFieldsProps> = ({ options }) => {
     watch,
   } = useFormContext<FormData>();
 
-  const handleFocus = () =>
+  const handleFocus = useCallback(() => {
     setValue("isAnyInputFocused", true, { shouldDirty: false });
-  const handleBlur = () =>
+  }, [setValue]);
+
+  const handleBlur = useCallback(() => {
     setValue("isAnyInputFocused", false, { shouldDirty: false });
+  }, [setValue]);
 
   return (
     <div className="w-full space-y-6">
@@ -112,7 +116,7 @@ export const DemoFormFields: React.FC<DemoFormFieldsProps> = ({ options }) => {
             name="skills"
             render={(value, setValue, error) => (
               <MultiSelectField
-                options={options.skillsOptions || []}
+                options={options.skillsOptions ?? []}
                 value={value}
                 onChange={setValue}
                 placeholder="Select your skills..."
@@ -120,7 +124,7 @@ export const DemoFormFields: React.FC<DemoFormFieldsProps> = ({ options }) => {
               />
             )}
           />
-          <MultipleCheckboxes skillsOptions={options.skillsOptions || []} />
+          <MultipleCheckboxes skillsOptions={options.skillsOptions ?? []} />
         </CardContent>
       </Card>
 
@@ -137,9 +141,9 @@ export const DemoFormFields: React.FC<DemoFormFieldsProps> = ({ options }) => {
         <CardContent className="space-y-6">
           <FormField label="Role" error={errors.role?.message}>
             <RadioGroup
-              value={watch("role") || ""}
+              value={watch("role") ?? ""}
               onValueChange={(value) =>
-                setValue("role", value as any, { shouldDirty: true })
+                setValue("role", value as "developer" | "designer" | "manager" | "other", { shouldDirty: true })
               }
             >
               <div className="flex items-center space-x-2">
@@ -199,7 +203,7 @@ export const DemoFormFields: React.FC<DemoFormFieldsProps> = ({ options }) => {
             <span className="text-primary">🌍</span> Location (keyMap Demo)
           </CardTitle>
           <CardDescription>
-            Field "address.country" demonstrates nested field mapping
+            Field &ldquo;address.country&rdquo; demonstrates nested field mapping
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -239,7 +243,7 @@ export const DemoFormFields: React.FC<DemoFormFieldsProps> = ({ options }) => {
           <div className="border-border/50 bg-muted/30 hover:bg-muted/50 flex items-start space-x-3 rounded-lg border p-4 transition-colors">
             <Checkbox
               id="notifications"
-              checked={watch("settings.notifications") || false}
+              checked={watch("settings.notifications") ?? false}
               onCheckedChange={(checked) =>
                 setValue("settings.notifications", checked as boolean, {
                   shouldDirty: true,
@@ -262,7 +266,7 @@ export const DemoFormFields: React.FC<DemoFormFieldsProps> = ({ options }) => {
           <div className="border-border/50 bg-muted/30 hover:bg-muted/50 flex items-start space-x-3 rounded-lg border p-4 transition-colors">
             <Checkbox
               id="newsletter"
-              checked={watch("settings.newsletter") || false}
+              checked={watch("settings.newsletter") ?? false}
               onCheckedChange={(checked) =>
                 setValue("settings.newsletter", checked as boolean, {
                   shouldDirty: true,

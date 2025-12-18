@@ -75,8 +75,8 @@ function pruneUndefined<T extends object>(obj: T): Partial<T> {
 }
 
 export const sampleRouter = createTRPCRouter({
-  getData: publicProcedure.input(z.object({ id: z.string() })).query(() => {
-    sleep(500);
+  getData: publicProcedure.input(z.object({ id: z.string() })).query(async () => {
+    await sleep(500);
     return formData;
   }),
   updateForm: publicProcedure
@@ -103,13 +103,13 @@ export const sampleRouter = createTRPCRouter({
         console.log("  Frontend: profile.email → Backend: email_address");
       }
       if ("address" in updateData && typeof updateData.address === "object") {
-        const addr = updateData.address as any;
+        const addr = updateData.address as Record<string, unknown>;
         if ("postal_code" in addr) {
           console.log("✨ Nested key transformation detected:");
           console.log("  Frontend: address.zipCode → Backend: address.postal_code");
         }
       }
-      sleep(500);
+      await sleep(500);
       // throw new Error("errorMessage");
       return { id, ...updateData };
     }),
@@ -118,27 +118,27 @@ export const sampleRouter = createTRPCRouter({
   }),
   addSkill: publicProcedure
     .input(SkillInputSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async () => {
       try {
-        sleep(500);
+        await sleep(500);
         // throw new Error("errorMessage");
         return { ok: true };
-      } catch (error: any) {
+      } catch (error: unknown) {
         const errorMessage =
-          error.response?.data?.message || "Failed to add skill";
+          (error as { response?: { data?: { message?: string } } }).response?.data?.message ?? "Failed to add skill";
         throw new Error(errorMessage);
       }
     }),
   removeSkill: publicProcedure
     .input(SkillInputSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async () => {
       try {
-        sleep(500);
+        await sleep(500);
         // throw new Error("errorMessage");
         return { ok: true };
-      } catch (error: any) {
+      } catch (error: unknown) {
         const errorMessage =
-          error.response?.data?.message || "Failed to remove skill";
+          (error as { response?: { data?: { message?: string } } }).response?.data?.message ?? "Failed to remove skill";
         throw new Error(errorMessage);
       }
     }),

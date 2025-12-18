@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from "react";
-import { 
-  type Transport, 
+import {
+  type Transport,
+  type SaveContext,
   useRhfAutosave,
   mapNestedKeys,
   detectNestedArrayChanges,
@@ -39,7 +40,6 @@ export const useFormData = () => {
   const { data: skillsOptions } = api.sample.getSkillsOptions.useQuery();
   const updateMutation = api.sample.updateForm.useMutation();
   const { mutateAsync: addSkill } = api.sample.addSkill.useMutation();
-  const { mutateAsync: removeSkill } = api.sample.removeSkill.useMutation();
 
   // Store baseline for array diffing
   const baselineRef = useRef<FormData | null>(null);
@@ -47,13 +47,13 @@ export const useFormData = () => {
   // Update baseline when form is reset/loaded
   useEffect(() => {
     if (sampleFormData && !isLoading) {
-      baselineRef.current = sampleFormData as FormData;
+      baselineRef.current = sampleFormData;
     }
   }, [sampleFormData, isLoading]);
 
   // Create stable transport function with nested field support
   const transport: Transport = useCallback(
-    async (payload: any, context: any) => {
+    async (payload: Record<string, unknown>, _ctx?: SaveContext) => {
       // If payload is empty, just return success without making API call
       if (!payload || Object.keys(payload).length === 0) {
         return { ok: true };
@@ -120,7 +120,7 @@ export const useFormData = () => {
         };
       }
     },
-    [userId, updateMutation, form],
+    [updateMutation, form],
   );
   const shouldSave = useCallback(
     ({
@@ -130,10 +130,10 @@ export const useFormData = () => {
     }: {
       isDirty: boolean;
       isValid: boolean;
-      dirtyFields: any;
+      dirtyFields: Record<string, unknown>;
       values: FormData;
     }) => {
-      const hasDirtyFields = Object.keys(dirtyFields || {}).length > 0;
+      const hasDirtyFields = Object.keys(dirtyFields ?? {}).length > 0;
       // For nested fields, check isDirty OR hasDirtyFields
       return (isDirty || hasDirtyFields) && isValid;
     },
@@ -142,14 +142,14 @@ export const useFormData = () => {
 
   // Custom selectPayload that handles nested fields and arrays
   const selectPayload = useCallback(
-    (values: FormData, dirtyFields: any) => {
+    (values: FormData, dirtyFields: Record<string, unknown>) => {
       // If no dirty fields, return empty
       if (!dirtyFields || Object.keys(dirtyFields).length === 0) {
         return {};
       }
-      
+
       // Helper to check if any value in an object/array is truthy
-      const hasAnyDirty = (obj: any): boolean => {
+      const hasAnyDirty = (obj: unknown): boolean => {
         if (obj === true) return true;
         if (Array.isArray(obj)) {
           return obj.some(item => hasAnyDirty(item));
@@ -159,52 +159,54 @@ export const useFormData = () => {
         }
         return false;
       };
-      
+
       // Custom extraction that handles arrays properly
-      const extractDirtyValues = (vals: any, dirty: any): any => {
+      const extractDirtyValues = (vals: unknown, dirty: unknown): unknown => {
         if (dirty === undefined || dirty === null) return undefined;
         if (vals === undefined || vals === null) return undefined;
-        
+
         // If dirty is exactly true, return the value
         if (dirty === true) {
           return vals;
         }
-        
+
         // If dirty is an array (for array fields like teamMembers)
         if (Array.isArray(dirty)) {
           if (!Array.isArray(vals)) {
             return undefined;
           }
-          
+
           // For arrays, if ANY item is dirty, return the ENTIRE array
           if (hasAnyDirty(dirty)) {
             return vals;
           }
-          
+
           return undefined;
         }
-        
+
         // If dirty is an object, recurse into it
         if (typeof dirty === 'object') {
-          const result: any = {};
-          
+          const result: Record<string, unknown> = {};
+
           for (const key of Object.keys(dirty)) {
-            const extracted = extractDirtyValues(vals?.[key], dirty[key]);
+            const dirtyObj = dirty as Record<string, unknown>;
+            const valsObj = vals as Record<string, unknown>;
+            const extracted = extractDirtyValues(valsObj?.[key], dirtyObj[key]);
             if (extracted !== undefined) {
               result[key] = extracted;
             }
           }
-          
+
           if (Object.keys(result).length > 0) {
             return result;
           }
           return undefined;
         }
-        
+
         return undefined;
       };
-      
-      return extractDirtyValues(values, dirtyFields) || {};
+
+      return extractDirtyValues(values, dirtyFields) ?? {};
     },
     [],
   );
@@ -219,14 +221,14 @@ export const useFormData = () => {
       captureInInputs: true, // Capture undo/redo even when focused on inputs
     },
     config: {
-      debug: true,
+      debug: process.env.NODE_ENV === "development",
       debounceMs: 800,
       enableMetrics: true,
     },
     shouldSave,
     selectPayload,
     validateBeforeSave: "payload",
-    onSaved: async (result) => {
+    onSaved: (result: { ok: boolean; error?: Error }) => {
       if (result.ok) {
         toast.success("Changes saved!");
       } else {
@@ -238,21 +240,24 @@ export const useFormData = () => {
   useEffect(() => {
     if (sampleFormData && !isLoading) {
       // Use setTimeout to avoid state updates during render
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         form.reset({
           ...sampleFormData,
           isAnyInputFocused: false,
         });
       }, 0);
+
+      return () => clearTimeout(timer);
     }
-  }, [form, sampleFormData, isLoading]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sampleFormData, isLoading]); // form is stable and doesn't need to be in deps
 
   return {
     form,
     userId,
     isLoading,
     options: {
-      skillsOptions,
+      skillsOptions: skillsOptions ?? [],
     } as formOptions,
     sampleFormData,
     autosave,

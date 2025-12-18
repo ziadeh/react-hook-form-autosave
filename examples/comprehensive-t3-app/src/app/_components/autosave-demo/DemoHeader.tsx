@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useFormData } from "@/hooks/useFormData";
+import type { useFormData } from "@/hooks/useFormData";
 import React, { useState, useEffect } from "react";
 
 export function DemoHeader({
@@ -21,14 +21,19 @@ export function DemoHeader({
     getBaseline,
   } = autosave;
 
-  const [metrics, setMetrics] = useState<any>(null);
+  const [metrics, setMetrics] = useState<{ totalSaves?: number; failedSaves?: number; averageSaveTime?: number } | null>(null);
   const [showDebug, setShowDebug] = useState(false);
 
   // Update metrics every second
   useEffect(() => {
     if (getMetrics) {
       const interval = setInterval(() => {
-        setMetrics(getMetrics());
+        const currentMetrics = getMetrics() as { totalSaves?: number; failedSaves?: number; averageSaveTime?: number };
+        setMetrics({
+          totalSaves: currentMetrics.totalSaves,
+          failedSaves: currentMetrics.failedSaves,
+          averageSaveTime: currentMetrics.averageSaveTime,
+        });
       }, 1000);
       return () => clearInterval(interval);
     }
@@ -51,7 +56,7 @@ export function DemoHeader({
                 type="button"
                 onClick={(e) => {
                   e.preventDefault();
-                  flush();
+                  void flush();
                 }}
                 disabled={!hasPendingChanges || isSaving}
                 size="sm"
@@ -127,11 +132,11 @@ export function DemoHeader({
                 <div className="grid grid-cols-3 gap-4">
                   <div className="text-center">
                     <p className="text-xs text-muted-foreground mb-1">Total Saves</p>
-                    <p className="text-2xl font-bold text-primary">{metrics.totalSaves || 0}</p>
+                    <p className="text-2xl font-bold text-primary">{metrics.totalSaves ?? 0}</p>
                   </div>
                   <div className="text-center">
                     <p className="text-xs text-muted-foreground mb-1">Failed Saves</p>
-                    <p className="text-2xl font-bold text-destructive">{metrics.failedSaves || 0}</p>
+                    <p className="text-2xl font-bold text-destructive">{metrics.failedSaves ?? 0}</p>
                   </div>
                   <div className="text-center">
                     <p className="text-xs text-muted-foreground mb-1">Avg Save Time</p>

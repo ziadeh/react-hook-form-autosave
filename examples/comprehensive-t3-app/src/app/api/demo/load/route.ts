@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 
 // Mock data that simulates what a server would return
 const MOCK_SERVER_DATA = {
@@ -19,7 +19,7 @@ const MOCK_SERVER_DATA = {
   lastSaved: "2024-01-15T10:30:00Z",
 };
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     // Simulate network delay
     await new Promise((resolve) => setTimeout(resolve, 800));
