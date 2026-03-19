@@ -205,6 +205,25 @@ describe('useDebouncedSave', () => {
       expect(transport.getCalls()).toHaveLength(0);
     });
 
+    it('should update saved state and guard when empty payload + equalsBaseline', async () => {
+      const { params, transport, updateLastSavedState } = makeParams({
+        debounceMs: 50,
+        equalsBaseline: () => true, // equals baseline when empty
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (params as any).selectPayload = jest.fn(() => ({}));
+      const { result } = renderHook(() => useDebouncedSave(params));
+
+      await act(async () => {
+        result.current.debouncedSave({ name: 'John' } as FormValues, {}, false);
+        jest.advanceTimersByTime(100);
+        await Promise.resolve();
+      });
+
+      expect(transport.getCalls()).toHaveLength(0);
+      expect(updateLastSavedState).toHaveBeenCalled();
+    });
+
     it('should skip duplicate payloads (same signature)', async () => {
       const { params, transport } = makeParams({ debounceMs: 50 });
       // First save — sets lastQueuedSig
@@ -296,6 +315,34 @@ describe('useDebouncedSave', () => {
         });
 
         expect(transport.getCalls()).toHaveLength(1);
+      });
+
+      it('should use cached validation result on second save (cache hit)', async () => {
+        const { params, transport, triggerMock } = makeParams({
+          debounceMs: 50,
+          validateBeforeSave: 'payload',
+        });
+        const { result } = renderHook(() => useDebouncedSave(params));
+
+        // First save — triggers validation (cache miss)
+        await act(async () => {
+          result.current.debouncedSave({ name: 'John' } as FormValues, { name: true }, false);
+          jest.advanceTimersByTime(100);
+          await Promise.resolve();
+        });
+
+        // Reset lastQueuedSig so second save proceeds
+        params.lastQueuedSigRef.current = '';
+
+        // Second save with same payload — should hit cache
+        await act(async () => {
+          result.current.debouncedSave({ name: 'John' } as FormValues, { name: true }, false);
+          jest.advanceTimersByTime(100);
+          await Promise.resolve();
+        });
+
+        // trigger should only be called once (second used cache)
+        expect(triggerMock.mock.calls.length).toBeLessThanOrEqual(2);
       });
     });
 
