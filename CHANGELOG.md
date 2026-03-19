@@ -39,6 +39,13 @@ This release dramatically expands test coverage across the entire hook layer, up
 - **@types/react**: 19.1 → 19.2
 - Fixed 64 lint errors from ESLint 9 migration (unused imports, unused vars, prefer-const)
 
+### 📦 Package Size Optimization
+
+- **Install size reduced by ~63%** (920 KB → 340 KB) via three changes:
+  - Disabled sourcemap generation in published package
+  - Removed `CHANGELOG.md` from the `files` array (still in repo, just not shipped to npm)
+  - Split testing utilities to a separate `./testing` subpath export (`react-hook-form-autosave/testing`), so test helpers are tree-shakeable and don't bloat production bundles
+
 ### 🐛 Quality Fixes
 
 - **`AutosaveManager.setTransport(t)`**: Added typed method, replaces unsafe `(manager as any).transport` hack
@@ -50,6 +57,15 @@ This release dramatically expands test coverage across the entire hook layer, up
 ### Migration Notes
 
 No breaking changes. All changes are additive (tests, dependency upgrades, internal quality fixes). Drop-in replacement for v3.1.0.
+
+**Testing utilities** have moved from the main entrypoint to a subpath export. Update your imports:
+```typescript
+// Before
+import { createMockTransport, createMockForm } from 'react-hook-form-autosave';
+
+// After
+import { createMockTransport, createMockForm } from 'react-hook-form-autosave/testing';
+```
 
 ---
 

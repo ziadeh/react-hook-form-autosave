@@ -318,7 +318,7 @@ describe('useDebouncedSave', () => {
       });
 
       it('should use cached validation result on second save (cache hit)', async () => {
-        const { params, transport, triggerMock } = makeParams({
+        const { params, triggerMock } = makeParams({
           debounceMs: 50,
           validateBeforeSave: 'payload',
         });

@@ -106,7 +106,7 @@ describe('useUndoRedo', () => {
 
   describe('hydrateFromServer()', () => {
     it('should clear undo stack', () => {
-      const { result, form } = makeHook();
+      const { result } = makeHook();
       // Manually record something in undo manager
       act(() => {
         if (result.current.undoMgrRef.current) {
