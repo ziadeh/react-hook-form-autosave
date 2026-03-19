@@ -37,6 +37,5 @@ export { MetricsCollector, type AutosaveMetrics } from "./metrics/collector";
 
 // Configuration
 
-// Testing utilities
-export * from "./testing/testUtils";
+// Helpers
 export * from "./helpers/pendingChanges";

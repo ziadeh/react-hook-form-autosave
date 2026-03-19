@@ -1,10 +1,10 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts"],
+  entry: ["src/index.ts", "src/testing/index.ts"],
   format: ["esm", "cjs"],
   dts: true,
-  sourcemap: true,
+  sourcemap: false,
   clean: true,
   target: "es2019",
   splitting: false,
