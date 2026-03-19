@@ -4,7 +4,7 @@
  * Allows transforming nested form fields to match API structure
  */
 
-import { parsePath, setByPath, getByPath, getAllPaths, joinPath } from './fieldPath';
+import { parsePath, setByPath, getByPath } from './fieldPath';
 
 export type NestedKeyMap = Record<
   string,
@@ -165,7 +165,7 @@ export function reverseNestedKeyMap(keyMap: NestedKeyMap): NestedKeyMap {
     if (typeof mapping === 'string') {
       reversed[mapping] = sourcePath;
     } else if (Array.isArray(mapping)) {
-      const [targetPath, transform] = mapping;
+      const [targetPath] = mapping;
       // Note: Cannot reverse transform functions
       reversed[targetPath] = sourcePath;
     } else {

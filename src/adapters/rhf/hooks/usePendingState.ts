@@ -2,7 +2,7 @@ import { useRef, useCallback, useEffect } from "react";
 import type { FieldValues } from "react-hook-form";
 import type { FormSubset } from "../../../strategies/validation/types";
 import type { SavePayload } from "../../../core/types";
-import type { PendingState } from "../utils/types";
+
 import { AutosaveManager } from "../../../core/autosave";
 import { createLogger } from "../../../utils/logger";
 
@@ -170,7 +170,7 @@ export function usePendingState<T extends FieldValues>(
           );
           return false;
         }
-      } catch (error) {
+      } catch {
         logger.error("[hasPendingChanges] Error comparing saved state");
       }
     }
@@ -194,7 +194,7 @@ export function usePendingState<T extends FieldValues>(
         baselineEqual,
       });
       return !baselineEqual;
-    } catch (error) {
+    } catch {
       logger.error("[hasPendingChanges] Error comparing with baseline");
       return false;
     }

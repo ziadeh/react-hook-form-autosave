@@ -3,7 +3,7 @@
  * Covers metrics collection, calculation, and reporting
  */
 
-import { MetricsCollector, type AutosaveMetrics } from '../collector';
+import { MetricsCollector } from '../collector';
 
 describe('MetricsCollector', () => {
   let collector: MetricsCollector;

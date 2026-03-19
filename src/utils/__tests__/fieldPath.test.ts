@@ -17,7 +17,6 @@ import {
   getAllPaths,
   normalizePath,
   cloneAlongPath,
-  type PathSegment,
 } from '../fieldPath';
 
 describe('fieldPath utilities', () => {

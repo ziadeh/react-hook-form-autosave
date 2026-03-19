@@ -5,23 +5,17 @@ import type { FieldValues } from "react-hook-form";
 
 import { AutosaveManager } from "../../core/autosave";
 import { autosaveReducer, initialAutosaveState } from "../../state/reducer";
-import type { Transport, SavePayload } from "../../core/types";
-import {
-  createValidationStrategy,
-  type ValidationMode,
-} from "../../strategies/validation";
+
 import { ValidationCache } from "../../cache/validationCache";
 import { PayloadCache } from "../../cache/payloadCache";
 import { MetricsCollector } from "../../metrics/collector";
 import { createLogger } from "../../utils/logger";
-import type { AutosaveConfig } from "../../config/schema";
+
 
 // Import our modular hooks and utilities
 import type {
   RhfAutosaveOptions,
   AutosaveReturn,
-  DiffHandler,
-  UndoOptions,
 } from "./utils/types";
 import {
   createDefaultSelectPayload,
@@ -68,7 +62,7 @@ export function useRhfAutosave<T extends FieldValues>(
 
   // Get form state
   const values = form.watch();
-  const { isDirty, isValid, dirtyFields, isValidating } = form.formState;
+  const { isDirty, dirtyFields, isValidating } = form.formState;
 
   // Initialize baseline management
   const baseline = useBaseline(form, diffMap, undoEnabled, config.debug);
@@ -213,23 +207,7 @@ export function useRhfAutosave<T extends FieldValues>(
     (manager as any).transport = composedTransport;
   }, [manager, composedTransport]);
 
-  // Now connect the lastOpRef to the selectPayload and shouldSave
-  const finalSelectPayload = useMemo(() => {
-    if (userSelectPayload) return userSelectPayload;
-    return createDefaultSelectPayload<T>(
-      getEffectiveDirtyFields,
-      diffMap,
-      baseline.baselineRef,
-      undoRedo.lastOpRef
-    );
-  }, [
-    userSelectPayload,
-    getEffectiveDirtyFields,
-    diffMap,
-    baseline.baselineRef,
-    undoRedo.lastOpRef,
-  ]);
-
+  // Connect the lastOpRef to shouldSave for accurate undo/redo detection
   const finalShouldSave = useMemo(() => {
     if (userShouldSave) return userShouldSave;
     return createDefaultShouldSave<T>(

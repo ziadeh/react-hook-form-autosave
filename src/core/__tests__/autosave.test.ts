@@ -154,7 +154,6 @@ describe('AutosaveManager', () => {
     });
 
     it('should set isInflight flag during save', async () => {
-      let isInflightDuringSave = false;
       const transport = createMockTransport(async () => {
         // Check if we can queue changes during save (should trigger shouldRerun)
         return { ok: true };
@@ -282,12 +281,12 @@ describe('AutosaveManager', () => {
     });
 
     it('should abort ongoing request', async () => {
-      let wasAborted = false;
+      let abortFired = false;
       const transport = createMockTransport(async (_payload, context) => {
         await new Promise((resolve) => {
           setTimeout(resolve, 100);
           context?.signal?.addEventListener('abort', () => {
-            wasAborted = true;
+            abortFired = true;
           });
         });
         return { ok: true as const };
@@ -306,6 +305,7 @@ describe('AutosaveManager', () => {
 
       // Give time for abort to process
       await new Promise(resolve => setTimeout(resolve, 50));
+      expect(abortFired).toBe(true);
     });
 
     it('should prevent shouldRerun from triggering', async () => {

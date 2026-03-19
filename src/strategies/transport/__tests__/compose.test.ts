@@ -4,7 +4,7 @@
  */
 
 import { composeTransports, parallelTransports } from '../compose';
-import type { Transport, SavePayload, SaveContext, SaveResult } from '../../../core/types';
+import type { Transport, SavePayload, SaveContext } from '../../../core/types';
 
 describe('composeTransports', () => {
   describe('basic composition', () => {

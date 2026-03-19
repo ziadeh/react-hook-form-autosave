@@ -1,7 +1,6 @@
 import type { FieldValues } from "react-hook-form";
 import type { SavePayload } from "../../../core/types";
 import { pickChanged } from "../../../utils/pickChanged";
-import { mapKeys, type KeyMap } from "../../../utils/mapKeys";
 import { createLogger } from "../../../utils/logger";
 
 export function datesToIso(payload: SavePayload): SavePayload {
@@ -40,6 +39,7 @@ export function createDefaultSelectPayload<T extends FieldValues>(
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function createDefaultShouldSave<T extends FieldValues>(
   getEffectiveDirtyFields: (dirty: any) => any,
   baselineRef?: { current: Record<string, any> | null },
@@ -89,27 +89,6 @@ export function createEffectiveDirtyFieldsGetter(
     }
 
     return effective;
-  };
-}
-
-export function createComposedTransport(
-  baseTransport: any,
-  keyMap?: KeyMap,
-  mapPayload?: (payload: Record<string, any>) => Record<string, any>,
-  diffMap?: Record<string, any>,
-  updateBaseline?: (payload: SavePayload) => void,
-  undoEnabled?: boolean,
-  undoMgrRef?: { current: any },
-  onSaved?: (result: any, payload: SavePayload) => void,
-  metrics?: any,
-  logger?: any,
-  baselineRef?: { current: Record<string, any> | null }
-) {
-  return async (payload: SavePayload, ctx: any) => {
-    const start = performance.now();
-    // Transport composition logic will go here
-    // This is a placeholder for the complex transport logic
-    return baseTransport(payload, ctx);
   };
 }
 

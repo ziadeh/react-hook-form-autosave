@@ -4,7 +4,7 @@
  * Supports detecting additions, removals, modifications, and reordering
  */
 
-import { getByPath, getAllPaths, parsePath, joinPath } from './fieldPath';
+import { getByPath, getAllPaths } from './fieldPath';
 
 export interface ArrayDiffOptions {
   /**

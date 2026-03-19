@@ -7,10 +7,9 @@ import { AutosaveManager } from "../../../core/autosave";
 import { ValidationCache } from "../../../cache/validationCache";
 import { MetricsCollector } from "../../../metrics/collector";
 import { stableStringify, deepEqual } from "../utils/diff";
-import { createLogger, type Logger } from "../../../utils/logger";
+import type { Logger } from "../../../utils/logger";
 import {
   createValidationStrategy,
-  type ValidationStrategy,
 } from "../../../strategies/validation";
 
 interface DebouncedSaveHookParams<T extends FieldValues> {
@@ -61,16 +60,16 @@ export function useDebouncedSave<T extends FieldValues>({
   selectPayload,
   shouldSave,
   config,
-  debounceTimeoutRef,
-  pendingPayloadRef,
+  debounceTimeoutRef: _debounceTimeoutRef,
+  pendingPayloadRef: _pendingPayloadRef,
   lastQueuedSigRef,
-  historyPendingRef,
-  noPendingGuardRef,
+  historyPendingRef: _historyPendingRef,
+  noPendingGuardRef: _noPendingGuardRef,
   baselineRef,
   lastOpRef,
   setDebounceTimeout,
   clearDebounceTimeout,
-  setPendingPayload,
+  setPendingPayload: _setPendingPayload,
   clearPendingPayload,
   setLastQueuedSig,
   setHistoryPending,
@@ -223,7 +222,7 @@ export function useDebouncedSave<T extends FieldValues>({
           if (result.ok && forceAfterUndo) {
             lastOpRef.current = null;
           }
-        } catch (error) {
+        } catch {
           logger.error("Error in debounced save");
           clearPendingPayload();
           setHistoryPending(false);

@@ -7,8 +7,7 @@ import type {
 import type { DiffHandler } from "./types";
 import { mapKeys, type KeyMap } from "../../../utils/mapKeys";
 import { datesToIso } from "./transforms";
-import { deepEqual } from "./diff";
-import { createLogger, type Logger } from "../../../utils/logger";
+import type { Logger } from "../../../utils/logger";
 
 interface ComposeTransportParams {
   baseTransport: Transport;
@@ -56,7 +55,7 @@ export function createComposedTransport({
     dispatch?.({ type: "SAVE_START" });
 
     try {
-      let remainingPayload = { ...payload };
+      const remainingPayload = { ...payload };
       const processedDiffMapFields: string[] = [];
       const failedDiffMapFields: string[] = [];
       const diffMapErrorDetails: Array<{

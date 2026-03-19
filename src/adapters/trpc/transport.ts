@@ -1,4 +1,4 @@
-import { SavePayload, SaveResult, Transport } from "../../core/types";
+import type { SavePayload, Transport } from "../../core/types";
 
 /**
  * Wrap a tRPC mutation as an autosave `Transport`.

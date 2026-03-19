@@ -11,7 +11,6 @@ import {
   summarizeArrayDiff,
   mergeArrayDiffs,
   type ArrayDiffResult,
-  type ArrayDiffOptions,
 } from '../nestedArrayDiff';
 
 describe('nested array diffing', () => {

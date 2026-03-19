@@ -4,18 +4,15 @@ import type { FormSubset } from "../../../strategies/validation/types";
 import type {
   UndoOptions,
   UndoOp,
-  UndoRedoState,
   UndoRedoAPI,
-  Patch,
 } from "../utils/types";
 import { InternalUndoManager } from "../managers/InternalUndoManager";
 import {
   diffToPatches,
   stableStringify,
   isEditableElement,
-  deepEqual,
 } from "../utils/diff";
-import { createLogger, type Logger } from "../../../utils/logger";
+import { createLogger } from "../../../utils/logger";
 
 interface UndoRedoHookParams {
   updateBaseline?: (values: any) => void;

@@ -3,7 +3,7 @@ import type { FieldValues } from "react-hook-form";
 import type { FormSubset } from "../../../strategies/validation/types";
 import type { DiffHandler } from "../utils/types";
 import { ValidationCache } from "../../../cache/validationCache";
-import { createLogger, type Logger } from "../../../utils/logger";
+import type { Logger } from "../../../utils/logger";
 import { stableStringify } from "../utils/diff";
 
 interface AutosaveEffectsParams<T extends FieldValues> {
@@ -65,8 +65,8 @@ export function useAutosaveEffects<T extends FieldValues>({
   isBaselineInitializedRef,
   lastOpRef,
   undoAffectedFieldsRef,
-  historyPendingRef,
-  lastRecordedValuesSigRef,
+  historyPendingRef: _historyPendingRef,
+  lastRecordedValuesSigRef: _lastRecordedValuesSigRef,
   initializeBaseline,
   resetBaseline,
   setHistoryPending,
@@ -76,7 +76,7 @@ export function useAutosaveEffects<T extends FieldValues>({
   updateLastSavedState,
   isEmpty,
   handleHydration,
-  undoMgrRef,
+  undoMgrRef: _undoMgrRef,
 }: AutosaveEffectsParams<T>) {
   // Track previous state to detect hydration
   const prevIsDirtyRef = useRef(isDirty);

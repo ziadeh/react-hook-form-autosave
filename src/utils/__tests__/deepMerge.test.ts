@@ -11,7 +11,6 @@ import {
   isDeepEqual,
   getDiff,
   applyDiff,
-  type DeepMergeOptions,
 } from '../deepMerge';
 
 describe('deep merge utilities', () => {

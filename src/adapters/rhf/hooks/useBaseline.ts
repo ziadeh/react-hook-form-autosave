@@ -2,9 +2,9 @@ import { useRef, useCallback } from "react";
 import type { FieldValues } from "react-hook-form";
 import type { FormSubset } from "../../../strategies/validation/types";
 import type { SavePayload } from "../../../core/types";
-import type { BaselineState, DiffHandler } from "../utils/types";
+import type { DiffHandler } from "../utils/types";
 import { deepEqual } from "../utils/diff";
-import { createLogger, type Logger } from "../../../utils/logger";
+import { createLogger } from "../../../utils/logger";
 
 export function useBaseline<T extends FieldValues>(
   form: FormSubset<T>,

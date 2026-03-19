@@ -3,7 +3,7 @@
  * Covers caching, TTL, cleanup, and stats functionality
  */
 
-import { PayloadCache, type CacheEntry } from '../payloadCache';
+import { PayloadCache } from '../payloadCache';
 import type { SaveResult } from '../../core/types';
 
 describe('PayloadCache', () => {
@@ -324,7 +324,6 @@ describe('PayloadCache', () => {
       cache.set('key1', mockResult);
 
       jest.advanceTimersByTime(1000);
-      const time2 = Date.now();
       cache.set('key2', mockResult);
 
       jest.advanceTimersByTime(1000);

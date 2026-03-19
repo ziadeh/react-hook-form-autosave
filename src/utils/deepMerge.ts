@@ -4,7 +4,7 @@
  * Supports arrays, custom merge strategies, and immutable updates
  */
 
-import { getByPath, setByPath, parsePath } from './fieldPath';
+import { getByPath, setByPath } from './fieldPath';
 
 export interface DeepMergeOptions {
   /**

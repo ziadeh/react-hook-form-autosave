@@ -3,7 +3,7 @@
  * Covers retry logic, backoff, and error handling
  */
 
-import { withRetry, type RetryConfig } from '../retry';
+import { withRetry } from '../retry';
 import type { Transport, SaveResult, SavePayload, SaveContext } from '../../../core/types';
 import { TransportError } from '../../../core/errors';
 
