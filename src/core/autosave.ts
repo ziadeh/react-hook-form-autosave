@@ -18,11 +18,16 @@ export class AutosaveManager {
   private readonly maxRetries = 3;
 
   constructor(
-    private readonly transport: Transport,
+    private transport: Transport,
     private readonly debounceMs = 600, // Keep for backward compatibility but won't use internal debouncing
     private readonly logger?: Logger,
     private readonly timer = { setTimeout, clearTimeout }
   ) {}
+
+  /** Update the transport after construction. Used by useRhfAutosave to inject the composed transport. */
+  setTransport(transport: Transport): void {
+    this.transport = transport;
+  }
 
   queueChange(delta: SavePayload): void {
     this.logger?.debug("Queueing change", {

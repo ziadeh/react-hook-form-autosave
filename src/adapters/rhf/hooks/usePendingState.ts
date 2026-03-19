@@ -53,7 +53,15 @@ export function usePendingState<T extends FieldValues>(
 
   const setNoPendingGuard = useCallback((guard: boolean) => {
     noPendingGuardRef.current = guard;
-  }, []);
+    if (guard) {
+      // Auto-clear the guard after a short delay to allow hasPendingChanges to re-evaluate
+      clearNoPendingGuardTimer();
+      noPendingGuardTimerRef.current = setTimeout(() => {
+        noPendingGuardRef.current = false;
+        noPendingGuardTimerRef.current = null;
+      }, NO_PENDING_GUARD_CLEAR_DELAY);
+    }
+  }, [clearNoPendingGuardTimer]);
 
   const setLastQueuedSig = useCallback((sig: string) => {
     lastQueuedSigRef.current = sig;
@@ -97,16 +105,8 @@ export function usePendingState<T extends FieldValues>(
     logger.debug("[hasPendingChanges] Checking state", debugInfo);
 
     // If we explicitly set no pending guard, respect it
+    // The timer to auto-clear is managed by setNoPendingGuard, not here
     if (noPendingGuardRef.current) {
-      // Clear any existing guard timer
-      clearNoPendingGuardTimer();
-
-      // Auto-clear the guard after a short delay
-      noPendingGuardTimerRef.current = setTimeout(() => {
-        noPendingGuardRef.current = false;
-        noPendingGuardTimerRef.current = null;
-      }, NO_PENDING_GUARD_CLEAR_DELAY);
-
       logger.debug("[hasPendingChanges] No pending guard active", debugInfo);
       return false;
     }
@@ -198,7 +198,7 @@ export function usePendingState<T extends FieldValues>(
       logger.error("[hasPendingChanges] Error comparing with baseline");
       return false;
     }
-  }, [manager, ignoreHistoryOps, form, equalsBaseline, logger, clearNoPendingGuardTimer]);
+  }, [manager, ignoreHistoryOps, form, equalsBaseline, logger]);
 
   const getPendingChanges = useCallback(() => {
     const reactPending = pendingPayloadRef.current;

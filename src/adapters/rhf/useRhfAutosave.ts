@@ -204,7 +204,7 @@ export function useRhfAutosave<T extends FieldValues>(
 
   // Update manager's transport to use the composed one
   useEffect(() => {
-    (manager as any).transport = composedTransport;
+    manager.setTransport(composedTransport);
   }, [manager, composedTransport]);
 
   // Connect the lastOpRef to shouldSave for accurate undo/redo detection
