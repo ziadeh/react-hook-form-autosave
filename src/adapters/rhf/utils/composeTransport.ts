@@ -28,6 +28,7 @@ interface ComposeTransportParams {
   updateLastSavedState?: (values: any) => void;
   isHydratingRef?: { current: boolean };
   clearDebounceTimeout?: () => void;
+  isSaveResetRef?: { current: boolean };
 }
 
 export function createComposedTransport({
@@ -49,6 +50,7 @@ export function createComposedTransport({
   updateLastSavedState,
   isHydratingRef,
   clearDebounceTimeout,
+  isSaveResetRef,
 }: ComposeTransportParams): Transport {
   return async (payload: SavePayload, ctx?: SaveContext) => {
     const start = performance.now();
@@ -388,7 +390,19 @@ export function createComposedTransport({
             keepSubmitCount: true,
           };
 
+          // Signal that this reset is from our save, NOT an external hydration
+          // This prevents the auto-hydration detector from clearing undo history
+          if (isSaveResetRef) isSaveResetRef.current = true;
           form.reset(currentValues, resetOptions);
+
+          // Clear the save-reset flag after effects have had a chance to see it
+          if (isSaveResetRef) {
+            // Use setTimeout to ensure the flag persists through the React render cycle
+            // that processes the form.reset() state changes
+            setTimeout(() => {
+              isSaveResetRef.current = false;
+            }, 50);
+          }
 
           // If we had failed diffMap fields, manually mark them as dirty
           if (failedDiffMapFields.length > 0) {

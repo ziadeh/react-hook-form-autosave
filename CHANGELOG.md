@@ -2,6 +2,57 @@
 
 All notable changes to **react-hook-form-autosave** will be documented here.
 
+## [3.2.0] - 2026-03-19
+
+### 🧪 Comprehensive Test Coverage & Dependency Upgrades
+
+This release dramatically expands test coverage across the entire hook layer, upgrades all dependencies to their latest major versions, and includes quality improvements discovered during testing.
+
+### ⭐ Test Coverage
+
+#### New Test Suites (10 new files, 254+ new tests)
+
+- **`InternalUndoManager`**: 47 tests covering record, undo, redo, clearFuture, undoWithoutApplying, checkpoints, maxEntries trimming, subscribe/unsubscribe, canUndo/canRedo, clear, getState
+- **`useBaseline`**: Tests for initializeBaseline, updateBaseline, resetBaseline, equalsBaseline (nested objects, arrays), forceBaselineUpdate, shouldInitialize, shouldReset
+- **`usePendingState`**: Tests for all 7 `hasPendingChanges` branches (noPendingGuard, debounce, react-layer, manager, history, lastSavedState, baseline), abort, flush, setters
+- **`useDebouncedSave`**: Debounce timing, payload building from dirty fields, baseline comparison after undo/redo, empty payload skip, duplicate deduplication via stableStringify, validation gating, forceSave variants
+- **`useUndoRedo`**: Initial state, canUndo/canRedo updates, API undefined when disabled, hydrateFromServer, handleHydration, undo/redo triggering debouncedSave, suppression via ignoreHistoryOps
+- **`useRhfAutosave` (integration)**: Full save cycle with debounce and forceSave, keyMap/mapPayload transformations, validateBeforeSave gating, abort, metrics, baseline helpers, undo/redo API, error handling on transport failure
+- **`useAutosaveEffects` (integration)**: Baseline init conditions, main save effect trigger, gating (isValidating, isHydrating, shouldSave), undo/redo trigger with historyPending, cache clearing on clean form
+- **`composeTransport`**: Transport composition, diffMap operations, error handling, partial save failures
+- **`diff`**: Deep equality and diff utility coverage
+- **`transforms`**: Payload transformation and key mapping coverage
+
+#### Coverage Enforcement
+- Jest coverage thresholds raised to **88% statements/lines, 90% functions, 80% branches**
+- Actual coverage: 89% statements, 81% branches, 94% functions, 91% lines
+- Total: **33 test suites, 1007 tests** (up from 23 suites, 753 tests in v3.1.0)
+- Per-module highlights: autosave 100%, retry 100%, compose 100%, cache 100%, state 100%, metrics 100%, config 100%, tRPC adapter 100%, InternalUndoManager 97.7%, usePendingState 95.7%, useBaseline 100%
+
+### 🔧 Dependency Upgrades
+
+- **Jest**: 29 → 30 (jest, jest-environment-jsdom, @types/jest)
+- **ESLint**: 8 → 9 with flat config migration (`eslint.config.js`)
+- **TypeScript ESLint**: 7 → 8, added `typescript-eslint` meta package
+- **tsup**: 8.5.0 → 8.5.1
+- **TypeScript**: 5.8 → latest patch
+- **@types/react**: 19.1 → 19.2
+- Fixed 64 lint errors from ESLint 9 migration (unused imports, unused vars, prefer-const)
+
+### 🐛 Quality Fixes
+
+- **`AutosaveManager.setTransport(t)`**: Added typed method, replaces unsafe `(manager as any).transport` hack
+- **`computeHasPendingChanges`**: Removed timer side-effect from getter function, moved to dedicated `setNoPendingGuard` — eliminates unexpected side effects when reading pending state
+- **`InternalUndoManager` logging**: Replaced `console.debug` with injected `UndoManagerLogger` for testability and cleaner output
+- **`deepMerge`**: Removed `console.warn` at maxDepth — silent truncation is the correct behavior
+- **Lint cleanup**: Removed unused imports and variables across all hook and utility files
+
+### Migration Notes
+
+No breaking changes. All changes are additive (tests, dependency upgrades, internal quality fixes). Drop-in replacement for v3.1.0.
+
+---
+
 ## [3.1.0] - 2025-12-17
 
 ### 🎉 Major Feature Release - Nested Fields Support

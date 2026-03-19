@@ -24,6 +24,8 @@ export function usePendingState<T extends FieldValues>(
   const noPendingGuardRef = useRef(false);
   const noPendingGuardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSavedStateRef = useRef<string>("");
+  // Flag to distinguish our own save-induced form.reset() from external hydration
+  const isSaveResetRef = useRef(false);
 
   const clearDebounceTimeout = useCallback(() => {
     if (debounceTimeoutRef.current) {
@@ -265,6 +267,7 @@ export function usePendingState<T extends FieldValues>(
     pendingPayloadRef,
     historyPendingRef,
     noPendingGuardRef,
+    isSaveResetRef,
 
     // Setters
     clearDebounceTimeout,

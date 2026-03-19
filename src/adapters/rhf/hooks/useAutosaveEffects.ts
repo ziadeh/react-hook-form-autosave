@@ -45,6 +45,8 @@ interface AutosaveEffectsParams<T extends FieldValues> {
   handleHydration: (data: T) => void;
   // Undo manager ref
   undoMgrRef: { current: any };
+  // Flag to distinguish save-induced form.reset() from external hydration
+  isSaveResetRef: { current: boolean };
 }
 
 export function useAutosaveEffects<T extends FieldValues>({
@@ -77,6 +79,7 @@ export function useAutosaveEffects<T extends FieldValues>({
   isEmpty,
   handleHydration,
   undoMgrRef: _undoMgrRef,
+  isSaveResetRef,
 }: AutosaveEffectsParams<T>) {
   // Track previous state to detect hydration
   const prevIsDirtyRef = useRef(isDirty);
@@ -108,8 +111,10 @@ export function useAutosaveEffects<T extends FieldValues>({
     // 3. No validation errors (indicates successful data load)
     // 4. Not currently hydrating (prevent loops)
     // 5. No pending saves in progress (prevent data loss)
+    // 6. NOT a save-induced form.reset() (which would falsely trigger this)
     const queueIsEmpty = isEmpty();
-    if (isNowClean && valuesChanged && hasNoErrors && !isHydratingRef.current && queueIsEmpty) {
+    const isSaveReset = isSaveResetRef.current;
+    if (isNowClean && valuesChanged && hasNoErrors && !isHydratingRef.current && queueIsEmpty && !isSaveReset) {
       logger.debug("Auto-detecting form hydration", {
         wasDirty,
         isNowClean,
@@ -134,6 +139,13 @@ export function useAutosaveEffects<T extends FieldValues>({
       clearPendingPayload();
       setLastQueuedSig("");
       setNoPendingGuard(true);
+    } else if (isSaveReset && isNowClean && valuesChanged) {
+      // This is a save-induced reset - update tracking without clearing undo history
+      logger.debug("Skipping hydration detection - save-induced form.reset()", {
+        wasDirty,
+        isNowClean,
+        valuesChanged,
+      });
     }
 
     // Update previous state
@@ -154,6 +166,7 @@ export function useAutosaveEffects<T extends FieldValues>({
     clearPendingPayload,
     setLastQueuedSig,
     setNoPendingGuard,
+    isSaveResetRef,
   ]);
 
   // Initialize baseline once, from clean state (but skip if hydration handled it)

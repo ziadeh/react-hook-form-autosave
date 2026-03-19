@@ -73,6 +73,7 @@ function makeParams(opts: {
   const undoAffectedFieldsRef = { current: new Set<string>() };
   const historyPendingRef = { current: false };
   const lastRecordedValuesSigRef = { current: '' };
+  const isSaveResetRef = { current: false };
 
   const params = {
     form,
@@ -104,6 +105,7 @@ function makeParams(opts: {
     isEmpty,
     handleHydration,
     undoMgrRef,
+    isSaveResetRef,
   };
 
   return {
@@ -117,6 +119,7 @@ function makeParams(opts: {
     isEmpty,
     isHydratingRef,
     isBaselineInitializedRef,
+    isSaveResetRef,
   };
 }
 

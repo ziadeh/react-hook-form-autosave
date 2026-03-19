@@ -182,7 +182,9 @@ export function useUndoRedo<T extends FieldValues>(
   }, [undoEnabled]);
 
   // Track the last signature to detect real changes
-  const lastSignatureRef = useRef<string>("");
+  // Must be initialized to the initial values signature so the first real user
+  // change is not swallowed by the "initialize on first run" guard below.
+  const lastSignatureRef = useRef<string>(stableStringify(initialValues as any));
   
   // Record user changes - use signature-based comparison which worked for simple fields
   useEffect(() => {

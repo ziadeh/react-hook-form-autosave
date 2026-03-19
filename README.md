@@ -57,14 +57,12 @@ yarn add react-hook-form-autosave
 
 | Peer | Version |
 |------|---------|
-| `react` | `>=19` |
+| `react` | `>=18` |
 | `react-hook-form` | `>=7` |
 
-> **v4 Migration Note:** v4 drops React 18 support. The peer dependency is now `react: ">=19"`. If you need React 18 support, stay on v3.x.
-
 ```bash
-# Ensure you have React 19+
-npm install react@^19 react-dom@^19
+# Ensure you have React 18+
+npm install react@^18 react-dom@^18
 ```
 
 ---

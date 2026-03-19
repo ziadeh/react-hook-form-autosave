@@ -179,6 +179,7 @@ export function useRhfAutosave<T extends FieldValues>(
         updateLastSavedState: pendingState.updateLastSavedState,
         isHydratingRef: undoRedo.isHydratingRef,
         clearDebounceTimeout: pendingState.clearDebounceTimeout,
+        isSaveResetRef: pendingState.isSaveResetRef,
       }),
     [
       baseTransport,
@@ -198,6 +199,7 @@ export function useRhfAutosave<T extends FieldValues>(
       pendingState.updateLastSavedState,
       undoRedo.isHydratingRef,
       pendingState.clearDebounceTimeout,
+      pendingState.isSaveResetRef,
       dispatch,
     ]
   );
@@ -253,6 +255,7 @@ export function useRhfAutosave<T extends FieldValues>(
     lastRecordedValuesSigRef: undoRedo.lastRecordedValuesSigRef,
     handleHydration: undoRedo.handleHydration,
     undoMgrRef: undoRedo.undoMgrRef,
+    isSaveResetRef: pendingState.isSaveResetRef,
   });
 
   // Cleanup effect
