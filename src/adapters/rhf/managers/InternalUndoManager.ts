@@ -1,5 +1,9 @@
 import type { FieldPath, HistoryEntry } from "../utils/types";
 
+export interface UndoManagerLogger {
+  debug(message: string): void;
+}
+
 /** Minimal manager that writes via RHF setValue */
 export class InternalUndoManager {
   private past: HistoryEntry[] = [];
@@ -19,7 +23,8 @@ export class InternalUndoManager {
       entry: HistoryEntry,
       op: "undo" | "redo"
     ) => void,
-    private maxEntries?: number
+    private maxEntries?: number,
+    private logger?: UndoManagerLogger
   ) {}
 
   subscribe(listener: () => void): () => void {
@@ -145,7 +150,7 @@ export class InternalUndoManager {
     const target = this.checkpoints.pop();
     if (target === undefined) {
       // No checkpoint found - undo everything
-      console.debug("[UndoManager] No checkpoint found, undoing all changes");
+      this.logger?.debug("[UndoManager] No checkpoint found, undoing all changes");
       let undidSomething = false;
       while (this.past.length > 0) {
         if (!this.undo()) break;
@@ -155,7 +160,7 @@ export class InternalUndoManager {
     }
 
     // Undo until we reach the checkpoint
-    console.debug(`[UndoManager] Undoing to checkpoint at position ${target}`);
+    this.logger?.debug(`[UndoManager] Undoing to checkpoint at position ${target}`);
     let undidSomething = false;
     while (this.past.length > target) {
       if (!this.undo()) break;

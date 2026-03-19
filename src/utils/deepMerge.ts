@@ -64,7 +64,7 @@ export function deepMerge<T extends Record<string, any>>(
 
   function mergeRecursive(tgt: any, src: any, depth: number): any {
     if (depth > maxDepth) {
-      console.warn('Deep merge exceeded max depth, stopping recursion');
+      // Silently stop recursion — callers can set maxDepth to a tighter value if needed
       return tgt;
     }
 
