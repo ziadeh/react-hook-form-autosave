@@ -155,13 +155,8 @@ export function useUndoRedo<T extends FieldValues>(
       (form as any)?.setValue?.(name, value, {
         shouldDirty: true,
         shouldTouch: true,
-        shouldValidate: true,
+        shouldValidate: false,
       });
-
-      // For arrays, trigger validation after a short delay
-      if (Array.isArray(value)) {
-        setTimeout(() => (form as any)?.trigger?.(name), 0);
-      }
     };
 
     undoMgrRef.current = new InternalUndoManager(
@@ -346,6 +341,11 @@ export function useUndoRedo<T extends FieldValues>(
 
     logger.debug("Execute undo - state after:", undoMgrRef.current.getState());
 
+    // Validate all fields once after all patches applied
+    if (undoSuccessful) {
+      form.trigger();
+    }
+
     if (!undoSuccessful) {
       // Reset state if undo failed
       suppressRecordRef.current = null;
@@ -441,6 +441,11 @@ export function useUndoRedo<T extends FieldValues>(
     const redoSuccessful = undoMgrRef.current.redo();
 
     logger.debug("Execute redo - state after:", undoMgrRef.current.getState());
+
+    // Validate all fields once after all patches applied
+    if (redoSuccessful) {
+      form.trigger();
+    }
 
     if (!redoSuccessful) {
       // Reset state if redo failed
