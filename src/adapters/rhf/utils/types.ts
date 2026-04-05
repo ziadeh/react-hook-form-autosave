@@ -46,6 +46,14 @@ export interface UndoOptions {
   target?: Document | HTMLElement;
 }
 
+/* ================================ Status Change Types ================================== */
+
+export type AutosaveStatus =
+  | { state: 'idle' }
+  | { state: 'saving' }
+  | { state: 'saved'; payload: SavePayload }
+  | { state: 'error'; error: Error };
+
 /* ================================ Main Hook Options ================================== */
 
 export interface RhfAutosaveOptions<T extends FieldValues> {
@@ -61,6 +69,7 @@ export interface RhfAutosaveOptions<T extends FieldValues> {
     dirtyFields: any;
   }) => boolean;
   onSaved?: (result: any, payload: SavePayload) => void;
+  onStatusChange?: (status: AutosaveStatus) => void;
   keyMap?: KeyMap;
   mapPayload?: (payload: Record<string, any>) => Record<string, any>;
   validateBeforeSave?: ValidationMode;
