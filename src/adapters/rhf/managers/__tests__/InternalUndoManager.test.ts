@@ -433,4 +433,74 @@ describe('InternalUndoManager', () => {
       });
     });
   });
+
+  describe('snapshot before mutate (nested fields)', () => {
+    it('should build redo entry from pre-mutation snapshot for multi-field entries', () => {
+      const values: Record<string, unknown> = { 'profile.firstName': 'Jane', 'profile.lastName': 'Doe' };
+      const setValueCalls: Array<{ name: string; value: unknown }> = [];
+
+      // setValue mutates values immediately (simulating React re-render)
+      const setValue = (name: string, value: unknown) => {
+        values[name] = value;
+        setValueCalls.push({ name, value });
+      };
+      const getCurrentValues = () => ({ ...values });
+      const mgr = new InternalUndoManager(setValue, getCurrentValues);
+
+      // Record: changed both firstName and lastName
+      mgr.record([
+        { name: 'profile.firstName', prevValue: 'John', nextValue: 'Jane', rootField: 'profile' },
+        { name: 'profile.lastName', prevValue: 'Smith', nextValue: 'Doe', rootField: 'profile' },
+      ]);
+
+      // Undo — should snapshot { firstName: 'Jane', lastName: 'Doe' } BEFORE applying
+      mgr.undo();
+
+      // After undo, values should be restored to prev
+      expect(values['profile.firstName']).toBe('John');
+      expect(values['profile.lastName']).toBe('Smith');
+
+      // Now redo — should restore to 'Jane' and 'Doe' (the pre-undo snapshot)
+      setValueCalls.length = 0;
+      mgr.redo();
+
+      const redoFirstName = setValueCalls.find(c => c.name === 'profile.firstName');
+      const redoLastName = setValueCalls.find(c => c.name === 'profile.lastName');
+      expect(redoFirstName?.value).toBe('Jane');
+      expect(redoLastName?.value).toBe('Doe');
+    });
+
+    it('should preserve correct undo values after redo of multi-field entry', () => {
+      const values: Record<string, unknown> = { a: 10, b: 20 };
+      const setValueCalls: Array<{ name: string; value: unknown }> = [];
+
+      const setValue = (name: string, value: unknown) => {
+        values[name] = value;
+        setValueCalls.push({ name, value });
+      };
+      const getCurrentValues = () => ({ ...values });
+      const mgr = new InternalUndoManager(setValue, getCurrentValues);
+
+      mgr.record([
+        { name: 'a', prevValue: 1, nextValue: 10, rootField: 'a' },
+        { name: 'b', prevValue: 2, nextValue: 20, rootField: 'b' },
+      ]);
+
+      // Undo: a→1, b→2
+      mgr.undo();
+      expect(values['a']).toBe(1);
+      expect(values['b']).toBe(2);
+
+      // Redo: a→10, b→20
+      mgr.redo();
+      expect(values['a']).toBe(10);
+      expect(values['b']).toBe(20);
+
+      // Undo again: should go back to a→1, b→2
+      setValueCalls.length = 0;
+      mgr.undo();
+      expect(setValueCalls).toContainEqual({ name: 'a', value: 1 });
+      expect(setValueCalls).toContainEqual({ name: 'b', value: 2 });
+    });
+  });
 });
