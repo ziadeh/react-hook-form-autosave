@@ -48,6 +48,20 @@ export function deepEqual(a: any, b: any): boolean {
   return false;
 }
 
+function cloneValue(val: any): any {
+  if (val === null || val === undefined) return val;
+  if (val instanceof Date) return new Date(val.getTime());
+  if (Array.isArray(val)) return val.map(cloneValue);
+  if (typeof val === 'object') {
+    const clone: Record<string, any> = {};
+    for (const k of Object.keys(val)) {
+      clone[k] = cloneValue(val[k]);
+    }
+    return clone;
+  }
+  return val;
+}
+
 export function diffToPatches(prev: any, next: any, basePath = ""): Patch[] {
   // Handle nullish values
   if (prev === next) return [];
@@ -62,8 +76,8 @@ export function diffToPatches(prev: any, next: any, basePath = ""): Patch[] {
     return [
       {
         name: basePath,
-        prevValue: prev,
-        nextValue: next,
+        prevValue: cloneValue(prev),
+        nextValue: cloneValue(next),
         rootField: basePath.includes(".") ? basePath.split(".")[0] : basePath,
       },
     ];
@@ -103,8 +117,8 @@ export function diffToPatches(prev: any, next: any, basePath = ""): Patch[] {
         // Arrays are atomic
         patches.push({
           name: childPath,
-          prevValue: p,
-          nextValue: n,
+          prevValue: cloneValue(p),
+          nextValue: cloneValue(n),
           rootField: childPath.includes(".")
             ? childPath.split(".")[0]
             : childPath,
