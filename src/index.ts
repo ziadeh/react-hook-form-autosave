@@ -11,6 +11,10 @@ export { trpcTransport } from "./adapters/trpc/transport";
 export * from "./strategies/validation";
 export * from "./strategies/transport/retry";
 export * from "./strategies/transport/compose";
+export { fetchTransport } from "./strategies/transport/fetch";
+export type { FetchTransportOptions } from "./strategies/transport/fetch";
+export { serverActionTransport } from "./strategies/transport/serverAction";
+export type { ServerActionTransportOptions } from "./strategies/transport/serverAction";
 
 // State management
 export * from "./state/types";
@@ -36,6 +40,12 @@ export { ValidationCache } from "./cache/validationCache";
 export { MetricsCollector, type AutosaveMetrics } from "./metrics/collector";
 
 // Configuration
+
+// Navigation guard
+export { useBeforeUnload } from "./hooks/useBeforeUnload";
+
+// Status types
+export type { AutosaveStatus } from "./adapters/rhf/utils/types";
 
 // Helpers
 export * from "./helpers/pendingChanges";

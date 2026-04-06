@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useReducer, useMemo, useCallback } from "react";
+import { useEffect, useReducer, useMemo, useCallback, useRef } from "react";
 import type { FieldValues } from "react-hook-form";
 
 import { AutosaveManager } from "../../core/autosave";
@@ -39,6 +39,7 @@ export function useRhfAutosave<T extends FieldValues>(
     selectPayload: userSelectPayload,
     shouldSave: userShouldSave,
     onSaved,
+    onStatusChange,
     keyMap,
     mapPayload,
     validateBeforeSave = "payload",
@@ -258,6 +259,32 @@ export function useRhfAutosave<T extends FieldValues>(
     isSaveResetRef: pendingState.isSaveResetRef,
   });
 
+  // Status change callback — fires on transitions, not every render
+  const prevStatusRef = useRef<{ isSaving: boolean; lastError: Error | null }>({
+    isSaving: false,
+    lastError: null,
+  });
+
+  useEffect(() => {
+    if (!onStatusChange) return;
+
+    const prev = prevStatusRef.current;
+    const wasSaving = prev.isSaving;
+    const hadError = prev.lastError;
+
+    if (!wasSaving && state.isSaving) {
+      onStatusChange({ state: 'saving' });
+    } else if (wasSaving && !state.isSaving && !state.lastError) {
+      onStatusChange({ state: 'saved' });
+    } else if (wasSaving && !state.isSaving && state.lastError) {
+      onStatusChange({ state: 'error', error: state.lastError });
+    } else if (!wasSaving && !state.isSaving && hadError && !state.lastError) {
+      onStatusChange({ state: 'idle' });
+    }
+
+    prevStatusRef.current = { isSaving: state.isSaving, lastError: state.lastError };
+  }, [state.isSaving, state.lastError, onStatusChange]);
+
   // Cleanup effect
   useEffect(() => {
     return () => {
@@ -316,4 +343,5 @@ export type {
   DiffHandler,
   UndoOptions,
   AutosaveReturn,
+  AutosaveStatus,
 } from "./utils/types";

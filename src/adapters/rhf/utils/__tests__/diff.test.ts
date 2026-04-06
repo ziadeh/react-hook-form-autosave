@@ -185,3 +185,32 @@ describe('isEditableElement', () => {
     expect(isEditableElement(div)).toBe(true);
   });
 });
+
+describe('diffToPatches — array cloning', () => {
+  it('should not share references between patch values and input arrays', () => {
+    const prev = { tags: [{ id: 1, name: 'a' }] };
+    const next = { tags: [{ id: 1, name: 'a' }, { id: 2, name: 'b' }] };
+    const patches = diffToPatches(prev, next, '');
+
+    // Mutate the original array
+    next.tags.push({ id: 3, name: 'c' });
+
+    // Patch should NOT reflect the mutation
+    expect(patches[0].nextValue).toHaveLength(2);
+    expect(patches[0].prevValue).toHaveLength(1);
+  });
+
+  it('should clone nested objects within arrays', () => {
+    // Use different array lengths so deepEqual detects a change (id-based comparison ignores content)
+    const prev = { items: [{ id: 1, data: { x: 1 } }] };
+    const next = { items: [{ id: 1, data: { x: 1 } }, { id: 2, data: { x: 2 } }] };
+    const patches = diffToPatches(prev, next, '');
+
+    // Mutate the nested object in the original
+    (next.items[1].data as any).x = 999;
+
+    // Patch should NOT reflect the mutation
+    const patchNext = patches[0].nextValue as any[];
+    expect(patchNext[1].data.x).toBe(2);
+  });
+});

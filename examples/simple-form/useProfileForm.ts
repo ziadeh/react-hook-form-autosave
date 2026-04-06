@@ -1,10 +1,15 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { useRhfAutosave, type Transport } from "react-hook-form-autosave";
+import {
+  useRhfAutosave,
+  useBeforeUnload,
+  fetchTransport,
+  withRetry,
+} from "react-hook-form-autosave";
 import { useProfileMutation } from "./useProfileMutation";
 
 // Form schema
@@ -26,8 +31,7 @@ export const useProfileForm = ({
   userId,
   initialData,
 }: UseProfileFormProps) => {
-  const { updateProfile, onAddSkill, onRemoveSkill } =
-    useProfileMutation(userId);
+  const { onAddSkill, onRemoveSkill } = useProfileMutation(userId);
 
   const form = useForm<ProfileFormData>({
     resolver: zodResolver(profileSchema),
@@ -41,18 +45,23 @@ export const useProfileForm = ({
     mode: "onChange",
   });
 
-  const transport: Transport = useMemo(() => {
-    return async (payload) => {
-      const { skills: _omit, ...rest } = payload as any;
-      await updateProfile(rest);
-      return { ok: true, version: Date.now().toString() };
-    };
-  }, [updateProfile]);
+  // One-line transport with retry — replaces hand-written fetch wrapper
+  const transport = withRetry(
+    fetchTransport(`/api/profiles/${userId}`, {
+      method: "PATCH",
+      credentials: "include",
+    }),
+    { maxRetries: 2 }
+  );
 
-  const { isSaving, lastError } = useRhfAutosave<ProfileFormData>({
+  const {
+    isSaving,
+    lastError,
+    hasPendingChanges,
+  } = useRhfAutosave<ProfileFormData>({
     form,
     transport,
-    debounceMs: 600,
+    config: { debounceMs: 600 },
     shouldSave: ({ isDirty }) => !!isDirty,
     keyMap: {
       fullName: "full_name",
@@ -66,6 +75,11 @@ export const useProfileForm = ({
         onRemove: onRemoveSkill,
       },
     },
+    onStatusChange: (status) => {
+      if (status.state === "error") {
+        console.error("Autosave failed:", status.error.message);
+      }
+    },
     onSaved: (res) => {
       if (res.ok) {
         form.reset(form.getValues(), { keepValues: true, keepDirty: false });
@@ -73,11 +87,14 @@ export const useProfileForm = ({
     },
   });
 
+  // Warn before closing tab with unsaved changes
+  useBeforeUnload(hasPendingChanges);
+
   useEffect(() => {
     if (initialData) {
       form.reset(initialData, { keepDirty: false });
     }
   }, [initialData, form]);
 
-  return { form, isSaving, lastError };
+  return { form, isSaving, lastError, hasPendingChanges };
 };
