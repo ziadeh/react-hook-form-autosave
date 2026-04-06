@@ -51,7 +51,7 @@ export interface UndoOptions {
 export type AutosaveStatus =
   | { state: 'idle' }
   | { state: 'saving' }
-  | { state: 'saved'; payload: SavePayload }
+  | { state: 'saved' }
   | { state: 'error'; error: Error };
 
 /* ================================ Main Hook Options ================================== */

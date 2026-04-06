@@ -9,7 +9,7 @@ export interface ServerActionTransportOptions {
 }
 
 export function serverActionTransport(
-  action: (data: any) => Promise<any>,
+  action: (data: unknown) => Promise<unknown>,
   options: ServerActionTransportOptions = {}
 ): Transport {
   const { mapPayload, mapResult } = options;

@@ -275,7 +275,7 @@ export function useRhfAutosave<T extends FieldValues>(
     if (!wasSaving && state.isSaving) {
       onStatusChange({ state: 'saving' });
     } else if (wasSaving && !state.isSaving && !state.lastError) {
-      onStatusChange({ state: 'saved', payload: {} });
+      onStatusChange({ state: 'saved' });
     } else if (wasSaving && !state.isSaving && state.lastError) {
       onStatusChange({ state: 'error', error: state.lastError });
     } else if (!wasSaving && !state.isSaving && hadError && !state.lastError) {
