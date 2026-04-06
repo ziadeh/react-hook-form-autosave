@@ -2,6 +2,43 @@
 
 All notable changes to **react-hook-form-autosave** will be documented here.
 
+## [3.3.0] - 2026-04-06
+
+### New Features
+
+- **`fetchTransport(url, options?)`** — Zero-config REST transport preset. Handles JSON serialization, `Content-Type` headers, `AbortSignal` passthrough, and non-2xx error wrapping. Composable with `withRetry()` and `composeTransports()`.
+- **`serverActionTransport(action, options?)`** — Next.js Server Actions transport preset. Calls server actions directly, wraps thrown errors as `TransportError`. Supports `mapPayload` and `mapResult` options.
+- **`useBeforeUnload(shouldBlock)`** — Navigation guard hook that shows a browser confirmation dialog when the user tries to close/reload the tab with unsaved changes.
+- **`onStatusChange` callback** — New option on `useRhfAutosave` that fires on state transitions (`idle` / `saving` / `saved` / `error`). Fires only on transitions, not every render — ideal for toasts, analytics, and error reporting.
+
+### Bug Fixes
+
+- **Undo not activating on first change after hydration** — `handleHydration` and `hydrateFromServer` stored a mutable `form.watch()` reference in `lastValuesRef` without cloning. The first user change mutated both prev and next, so `diffToPatches` saw 0 patches and the undo entry was silently lost. Fixed by cloning values in both hydration paths.
+- **Array values in undo history corrupted by mutation** — `diffToPatches` stored array references directly in patches. Since React Hook Form mutates arrays internally, stored history entries could be corrupted. Fixed by deep-cloning array values when creating patches.
+- **Multi-field undo/redo triggered per-patch validation** — Each `setValue` call during undo/redo triggered independent validation, causing unnecessary work and potential stale-state issues. Fixed by deferring validation (`shouldValidate: false`) and calling `form.trigger()` once after all patches are applied.
+
+### New Exports
+
+```typescript
+// Transport presets
+export { fetchTransport } from "react-hook-form-autosave";
+export type { FetchTransportOptions } from "react-hook-form-autosave";
+export { serverActionTransport } from "react-hook-form-autosave";
+export type { ServerActionTransportOptions } from "react-hook-form-autosave";
+
+// Navigation guard
+export { useBeforeUnload } from "react-hook-form-autosave";
+
+// Status types
+export type { AutosaveStatus } from "react-hook-form-autosave";
+```
+
+### Migration Notes
+
+No breaking changes. All changes are additive. Drop-in replacement for v3.2.0.
+
+---
+
 ## [3.2.0] - 2026-03-19
 
 ### 🧪 Comprehensive Test Coverage & Dependency Upgrades

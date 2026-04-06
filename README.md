@@ -11,12 +11,17 @@
 ![Demo](https://raw.githubusercontent.com/ziadeh/react-hook-form-autosave/main/assets/demo.gif)
 
 ```tsx
+import { useRhfAutosave, fetchTransport, useBeforeUnload } from "react-hook-form-autosave";
+
 const { isSaving, hasPendingChanges, undo, redo } = useRhfAutosave({
   form,
-  transport: (data) => fetch('/api/save', { method: 'POST', body: JSON.stringify(data) })
+  transport: fetchTransport('/api/save'),
 });
+
+useBeforeUnload(hasPendingChanges);
 ```
 
+✅ **Zero-config transports** - `fetchTransport`, `serverActionTransport` — no boilerplate  
 ✅ **Accurate pending state** - Always know if there are unsaved changes  
 ✅ **Undo/Redo support** - Let users undo mistakes with Cmd/Ctrl+Z  
 ✅ **Array field handling** - Smart diffing for add/remove operations  
@@ -32,6 +37,7 @@ const { isSaving, hasPendingChanges, undo, redo } = useRhfAutosave({
 - [Quick Start](#-quick-start)
 - [Why Choose This?](#-why-choose-this)
 - [Core Features](#-core-features)
+- [Transport Presets](#-transport-presets)
 - [Basic Examples](#-basic-examples)
 - [Common Patterns](#-common-patterns)
 - [Nested Fields](#-nested-fields)
@@ -73,7 +79,7 @@ npm install react@^18 react-dom@^18
 
 ```tsx
 import { useForm } from "react-hook-form";
-import { useRhfAutosave } from "react-hook-form-autosave";
+import { useRhfAutosave, fetchTransport, useBeforeUnload } from "react-hook-form-autosave";
 
 function MyForm() {
   const form = useForm({
@@ -82,29 +88,25 @@ function MyForm() {
 
   const { isSaving, hasPendingChanges } = useRhfAutosave({
     form,
-    transport: async (data) => {
-      const response = await fetch("/api/save", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      return { ok: response.ok };
-    },
+    transport: fetchTransport("/api/save"),
   });
+
+  // Warn before closing tab with unsaved changes
+  useBeforeUnload(hasPendingChanges);
 
   return (
     <form>
       <input {...form.register("name")} placeholder="Name" />
       <input {...form.register("email")} placeholder="Email" />
       <div>
-        {isSaving ? "💾 Saving..." : hasPendingChanges ? "✏️ Editing..." : "✅ Saved"}
+        {isSaving ? "Saving..." : hasPendingChanges ? "Editing..." : "All saved"}
       </div>
     </form>
   );
 }
 ```
 
-**That's it!** Your form now autosaves with accurate pending state tracking.
+**That's it!** Your form now autosaves with accurate pending state tracking and navigation protection.
 
 ---
 
@@ -249,6 +251,93 @@ const { isSaving } = useRhfAutosave({
 // Now when users add/remove tags, only the changes are sent
 // The form properly tracks these as saved after success
 ```
+
+---
+
+## 🚌 Transport Presets
+
+Zero-config transport factories so you never write fetch boilerplate again.
+
+### fetchTransport — REST APIs
+
+```tsx
+import { useRhfAutosave, fetchTransport, withRetry } from "react-hook-form-autosave";
+
+const { isSaving } = useRhfAutosave({
+  form,
+  transport: fetchTransport("/api/save"),
+});
+
+// With options:
+const transport = fetchTransport("/api/save", {
+  method: "PATCH",
+  headers: { Authorization: `Bearer ${token}` },
+  credentials: "include",
+  mapBody: (payload) => ({ data: payload, updatedAt: Date.now() }),
+});
+
+// Compose with retry:
+const reliableTransport = withRetry(
+  fetchTransport("/api/save"),
+  { maxRetries: 3 }
+);
+```
+
+Handles JSON serialization, `Content-Type` headers, `AbortSignal` passthrough, and non-2xx error wrapping automatically.
+
+### serverActionTransport — Next.js Server Actions
+
+```tsx
+// app/actions.ts
+'use server';
+export async function saveForm(data: unknown) {
+  await db.form.update({ data });
+}
+
+// app/components/MyForm.tsx
+import { useRhfAutosave, serverActionTransport } from "react-hook-form-autosave";
+import { saveForm } from "./actions";
+
+const { isSaving } = useRhfAutosave({
+  form,
+  transport: serverActionTransport(saveForm),
+});
+
+// With custom result interpretation:
+const transport = serverActionTransport(saveForm, {
+  mapResult: (result: any) =>
+    result.success ? { ok: true } : { ok: false, error: new Error(result.message) },
+});
+```
+
+Calls the server action directly. Wraps thrown errors as `TransportError`.
+
+### useBeforeUnload — Navigation Guard
+
+```tsx
+import { useRhfAutosave, useBeforeUnload } from "react-hook-form-autosave";
+
+const { hasPendingChanges } = useRhfAutosave({ form, transport });
+
+// Warn before closing tab with unsaved changes
+useBeforeUnload(hasPendingChanges);
+```
+
+### onStatusChange — Lifecycle Callback
+
+```tsx
+const { isSaving } = useRhfAutosave({
+  form,
+  transport,
+  onStatusChange: (status) => {
+    // status.state: 'idle' | 'saving' | 'saved' | 'error'
+    if (status.state === "saved") toast.success("Saved!");
+    if (status.state === "error") Sentry.captureException(status.error);
+  },
+});
+```
+
+Fires on state transitions only, not on every render.
 
 ---
 
@@ -701,6 +790,7 @@ const result = useRhfAutosave<FormData>(options)
 | `shouldSave` | `(ctx) => boolean` | ❌ | Custom save condition |
 | `selectPayload` | `(values, dirty) => Partial<T>` | ❌ | Select fields to save |
 | `onSaved` | `(result, payload) => void` | ❌ | Save callback |
+| `onStatusChange` | `(status: AutosaveStatus) => void` | ❌ | Lifecycle callback (idle/saving/saved/error) |
 | `keyMap` | `KeyMap` | ❌ | Field name mapping |
 | `autoHydrate` | `boolean` | ❌ | Auto-sync server data (default: true) |
 
@@ -771,6 +861,29 @@ function MyForm() {
     </div>
   );
 }
+```
+
+### Next.js + Server Actions
+
+```tsx
+import { serverActionTransport } from "react-hook-form-autosave";
+import { saveFormData } from "./actions"; // Your server action
+
+const { isSaving } = useRhfAutosave({
+  form,
+  transport: serverActionTransport(saveFormData),
+});
+```
+
+### Next.js + REST API
+
+```tsx
+import { fetchTransport } from "react-hook-form-autosave";
+
+const { isSaving } = useRhfAutosave({
+  form,
+  transport: fetchTransport("/api/save"),
+});
 ```
 
 ### Remix
@@ -938,24 +1051,17 @@ const { isSaving } = useRhfAutosave({
 <details>
 <summary><strong>Can I use this with server components?</strong></summary>
 
-This is a client-side hook that requires React Hook Form, so it needs to be used in client components. However, the transport function can call server actions:
+This is a client-side hook that requires React Hook Form, so it needs to be used in client components. Use `serverActionTransport` to call server actions:
 
 ```tsx
 'use client';
 
-import { useRhfAutosave } from 'react-hook-form-autosave';
+import { useRhfAutosave, serverActionTransport } from 'react-hook-form-autosave';
 import { saveFormData } from './actions'; // Server action
 
 const { isSaving } = useRhfAutosave({
   form,
-  transport: async (data) => {
-    try {
-      await saveFormData(data);
-      return { ok: true };
-    } catch (error) {
-      return { ok: false, error };
-    }
-  }
+  transport: serverActionTransport(saveFormData),
 });
 ```
 </details>
