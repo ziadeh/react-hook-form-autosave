@@ -373,13 +373,22 @@ export function createComposedTransport({
         if (form) {
           const currentValues = form.getValues();
 
-          // Update last saved state BEFORE resetting form
-          if (updateLastSavedState) {
-            updateLastSavedState(currentValues);
+          // Build the confirmed-saved snapshot by merging saved payload
+          // onto the previous baseline. Do NOT use currentValues — the user
+          // may have typed while the save was in flight, and those mid-save
+          // edits must stay dirty.
+          const previousBaseline = baselineRef?.current ?? {};
+          const savedSnapshot: Record<string, any> = { ...previousBaseline };
+          for (const k of Object.keys(successfulPayload)) {
+            savedSnapshot[k] = (successfulPayload as any)[k];
           }
 
-          // Reset form to clear dirty state for successfully saved fields only
-          // For failed diffMap fields, keep them dirty so user knows they need attention
+          // Update last saved state with only what was actually saved
+          if (updateLastSavedState) {
+            updateLastSavedState(savedSnapshot);
+          }
+
+          // Reset form against the saved snapshot so mid-save edits remain dirty
           const resetOptions = {
             keepValues: true,
             keepDirty: failedDiffMapFields.length > 0, // Keep dirty if we have failures
@@ -393,7 +402,29 @@ export function createComposedTransport({
           // Signal that this reset is from our save, NOT an external hydration
           // This prevents the auto-hydration detector from clearing undo history
           if (isSaveResetRef) isSaveResetRef.current = true;
-          form.reset(currentValues, resetOptions);
+          form.reset(savedSnapshot, resetOptions);
+
+          // RHF's reset clears isDirty/dirtyFields unconditionally — it does
+          // NOT recalculate them by comparing current values against the new
+          // defaults. If the user edited fields while the save was in flight,
+          // those fields need to be explicitly re-dirtied so the autosave
+          // effect picks them up.
+          for (const key of Object.keys(currentValues)) {
+            const cur = (currentValues as any)[key];
+            const saved = (savedSnapshot as any)[key];
+            // Simple value comparison — deep equality for objects/arrays
+            const differs =
+              typeof cur === "object" && cur !== null
+                ? JSON.stringify(cur) !== JSON.stringify(saved)
+                : !Object.is(cur, saved);
+            if (differs) {
+              form.setValue(key as any, cur, {
+                shouldDirty: true,
+                shouldTouch: false,
+                shouldValidate: false,
+              });
+            }
+          }
 
           // Clear the save-reset flag after effects have had a chance to see it
           if (isSaveResetRef) {

@@ -1068,6 +1068,10 @@ const { isSaving } = useRhfAutosave({
 
 ---
 
+## 🤖 AI-Assisted Development
+
+This library ships with a Claude Code skill at `skills/rhf-autosave/SKILL.md`. Point your AI coding assistant at it for full API reference, usage examples, and common patterns — no docs tab-switching needed.
+
 ## 📄 License
 
 MIT © [Ziad Ziadeh](https://github.com/ziadeh)

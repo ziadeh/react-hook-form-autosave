@@ -2,6 +2,17 @@
 
 All notable changes to **react-hook-form-autosave** will be documented here.
 
+## [3.3.1] - 2026-04-06
+
+### Bug Fixes
+
+- **Mid-save edits lost after successful save** — Edits made while a save was in flight were silently swallowed because the internal baseline was updated with current form values instead of only the confirmed saved values.
+- **Autosave not re-triggering for mid-save edits** — After a save completed, fields edited during the save were not re-dirtied in React Hook Form, so the autosave cycle never picked them up for a follow-up save.
+
+### New
+
+- **AI skill reference** — Added `skills/rhf-autosave/SKILL.md` for AI coding assistants (Claude Code, etc.) with full API reference, usage examples, and common patterns.
+
 ## [3.3.0] - 2026-04-06
 
 ### New Features

@@ -207,20 +207,26 @@ export function useDebouncedSave<T extends FieldValues>({
 
           clearPendingPayload();
           setHistoryPending(false);
+          // Note: updateLastSavedState is handled inside the composed
+          // transport using the actual saved payload, not form.getValues().
 
-          // Update last saved state on successful save
-          if (result.ok && updateLastSavedState) {
-            const currentValues = form.getValues();
-            updateLastSavedState(currentValues);
-          }
+          if (result.ok) {
+            if (forceAfterUndo) {
+              lastOpRef.current = null;
+            }
 
-          const snapAfter = form.getValues();
-          if (equalsBaseline(snapAfter)) {
-            setNoPendingGuard(true);
-          }
-
-          if (result.ok && forceAfterUndo) {
-            lastOpRef.current = null;
+            // After a successful save, the composed transport:
+            // 1. Updates the baseline with the saved payload
+            // 2. Resets the form against the saved snapshot
+            // 3. Re-dirties any fields where current values differ
+            //    from the saved snapshot (mid-save edits)
+            //
+            // If mid-save edits exist, the form will be dirty and the
+            // autosave effect will naturally fire a new debounce cycle.
+            const snapAfter = form.getValues();
+            if (equalsBaseline(snapAfter)) {
+              setNoPendingGuard(true);
+            }
           }
         } catch {
           logger.error("Error in debounced save");
@@ -332,11 +338,12 @@ export function useDebouncedSave<T extends FieldValues>({
     setHistoryPending(false);
 
     if (result.ok) {
-      // Update last saved state on successful save
-      if (updateLastSavedState) {
-        updateLastSavedState(currentValues);
+      // Note: updateLastSavedState is handled inside the composed
+      // transport using the actual saved payload, not form.getValues().
+      const snapAfter = form.getValues();
+      if (equalsBaseline(snapAfter)) {
+        setNoPendingGuard(true);
       }
-      setNoPendingGuard(true);
     }
 
     return result;

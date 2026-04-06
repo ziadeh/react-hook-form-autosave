@@ -346,7 +346,7 @@ describe('useDebouncedSave', () => {
       });
     });
 
-    it('should update lastSavedState on successful save', async () => {
+    it('should not call updateLastSavedState directly (composed transport handles it)', async () => {
       const { params, updateLastSavedState } = makeParams({ debounceMs: 50 });
       const { result } = renderHook(() => useDebouncedSave(params));
 
@@ -356,7 +356,10 @@ describe('useDebouncedSave', () => {
         await Promise.resolve();
       });
 
-      expect(updateLastSavedState).toHaveBeenCalled();
+      // updateLastSavedState is now called inside the composed transport
+      // (using the saved payload), not from debouncedSave (which would
+      // incorrectly use form.getValues() and swallow mid-save edits).
+      expect(updateLastSavedState).not.toHaveBeenCalled();
     });
   });
 
@@ -456,7 +459,7 @@ describe('useDebouncedSave', () => {
       expect(transport.getCalls().length).toBeGreaterThanOrEqual(1);
     });
 
-    it('should update lastSavedState after successful forceSave', async () => {
+    it('should not call updateLastSavedState directly from forceSave (composed transport handles it)', async () => {
       const { params, updateLastSavedState } = makeParams({
         equalsBaseline: () => false,
         baseline: { name: 'John' },
@@ -469,7 +472,9 @@ describe('useDebouncedSave', () => {
         await result.current.forceSave();
       });
 
-      expect(updateLastSavedState).toHaveBeenCalled();
+      // updateLastSavedState is now called inside the composed transport
+      // (using the saved payload), not from forceSave.
+      expect(updateLastSavedState).not.toHaveBeenCalled();
     });
   });
 });

@@ -223,13 +223,8 @@ export function usePendingState<T extends FieldValues>(
       pendingPayloadRef.current = {};
     }
     const result = await manager.flush();
-
-    // Update last saved state after successful flush
-    if (result.ok) {
-      const currentValues = form.getValues();
-      updateLastSavedState(currentValues);
-    }
-
+    // Note: updateLastSavedState is handled inside the composed transport
+    // on success, using the actual saved payload (not current form values).
     return result;
   }, [manager, clearDebounceTimeout, form, updateLastSavedState]);
 
