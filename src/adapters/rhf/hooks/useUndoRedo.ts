@@ -589,7 +589,7 @@ export function useUndoRedo<T extends FieldValues>(
       // Don't call form.reset() since the form is already in the correct state
       // Just update our internal tracking
       if (undoMgrRef.current) undoMgrRef.current.clear();
-      lastValuesRef.current = data;
+      lastValuesRef.current = cloneValues(data);
       lastRecordedValuesSigRef.current = stableStringify(data as any);
 
       // IMPORTANT: Update baseline and saved state are handled by useAutosaveEffects
@@ -651,7 +651,7 @@ export function useUndoRedo<T extends FieldValues>(
       });
 
       if (undoMgrRef.current) undoMgrRef.current.clear();
-      lastValuesRef.current = data;
+      lastValuesRef.current = cloneValues(data);
       lastRecordedValuesSigRef.current = stableStringify(data as any);
 
       // Update baseline and saved state if provided
