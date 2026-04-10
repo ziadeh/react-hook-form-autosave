@@ -1,7 +1,7 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'jest-environment-jsdom',
-  roots: ['<rootDir>/src'],
+  roots: ['<rootDir>/src', '<rootDir>/tests'],
   testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx', '**/*.test.ts', '**/*.test.tsx'],
   collectCoverageFrom: [
     'src/**/*.ts',
@@ -9,6 +9,7 @@ module.exports = {
     '!src/**/*.d.ts',
     '!src/testing/**',
     '!src/index.ts',
+    '!tests/**',
   ],
   coverageThreshold: {
     global: {
@@ -21,6 +22,7 @@ module.exports = {
   setupFilesAfterEnv: ['<rootDir>/src/__tests__/setup.ts'],
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
+    '^@test-helpers/(.*)$': '<rootDir>/tests/helpers/$1',
   },
   transform: {
     '^.+\\.tsx?$': ['ts-jest', {
@@ -40,5 +42,6 @@ module.exports = {
     '/node_modules/',
     '/dist/',
     '/examples/',
+    '/tests/helpers/',
   ],
 };
