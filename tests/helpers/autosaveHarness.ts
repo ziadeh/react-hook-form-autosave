@@ -66,6 +66,17 @@ export interface HarnessOptions<T extends FieldValues> {
   config?: { debounceMs?: number; debug?: boolean };
   undo?: { enabled?: boolean; hotkeys?: boolean; ignoreHistoryOps?: boolean };
   validateBeforeSave?: "none" | "payload" | "all";
+  /**
+   * Enable `useRhfAutosave`'s built-in auto-hydration detection. Defaults to
+   * `false` in the harness because the auto-hydration effect in
+   * `useAutosaveEffects` clears undo/redo history whenever the form becomes
+   * clean — which happens every time an `undo()` returns the form to its
+   * baseline values. Matrix tests that need to exercise hydration drive it
+   * explicitly via `harness.hydrate(values)` (CONTEXT.md D-06). Tests that
+   * specifically want to cover the auto-hydration path (HYD-01..04) can
+   * opt in by passing `autoHydrate: true`.
+   */
+  autoHydrate?: boolean;
 }
 
 /**
@@ -217,6 +228,12 @@ export function mountAutosaveHarness<T extends FieldValues>(
   ) as typeof console.error;
 
   // -------- 3. Mount the hook --------
+  // Default autoHydrate to false: the hydration-detection effect in
+  // useAutosaveEffects treats any transition to a clean form with changed
+  // values as a hydration, which clears redo history the moment an undo()
+  // returns to baseline. Matrix tests drive hydration explicitly via
+  // harness.hydrate(). Tests that need the auto-hydration path opt in.
+  const autoHydrate = opts.autoHydrate ?? false;
   const renderResult: RenderHookResult<HarnessRenderValue<T>, unknown> =
     renderHook<HarnessRenderValue<T>, unknown>(() => {
       const form = useForm<T>({ defaultValues: opts.defaultValues as never });
@@ -225,6 +242,7 @@ export function mountAutosaveHarness<T extends FieldValues>(
         transport: transportFn,
         config: { debounceMs, debug },
         validateBeforeSave: opts.validateBeforeSave ?? "none",
+        autoHydrate,
         undo: {
           enabled: opts.undo?.enabled ?? true,
           hotkeys: opts.undo?.hotkeys ?? false,

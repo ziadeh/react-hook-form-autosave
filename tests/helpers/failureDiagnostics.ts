@@ -30,15 +30,20 @@ const registered = new Set<HarnessInstance>();
 let installed = false;
 
 /**
- * Register a harness instance for failure diagnostics. Lazily installs a single
- * `afterEach` hook on first call — subsequent calls only add to the registry.
+ * Register a harness instance for failure diagnostics. The `afterEach` hook
+ * is installed at module load (see the `installFailureDiagnostics()` call at
+ * the bottom of this file) — subsequent calls only add to the registry.
  *
  * The installed `afterEach` hook reads `expect.getState().suppressedErrors`:
  * if non-empty, the current test had a failed expectation, and the hook
  * dumps every registered harness's captured logs to `console.error`.
+ *
+ * NOTE: Jest 30 forbids registering lifecycle hooks (afterEach/beforeEach/etc.)
+ * from inside `it` blocks. `registerHarnessInstance` is called from
+ * `mountAutosaveHarness`, which runs inside `it` blocks — so the `afterEach`
+ * install MUST happen at module load, not lazily inside this function.
  */
 export function registerHarnessInstance(instance: HarnessInstance): void {
-  installFailureDiagnostics();
   registered.add(instance);
 }
 
@@ -114,3 +119,11 @@ export function __resetFailureDiagnostics(): void {
   registered.clear();
   installed = false;
 }
+
+// Install the afterEach hook at module load so it is registered BEFORE any
+// test body runs. Jest 30 forbids registering lifecycle hooks from inside
+// `it` blocks, so the prior "lazy install on first mount" strategy breaks
+// any test whose first harness mount happens inside an `it` block. Running
+// installation at import time is safe: Jest re-imports modules per test
+// file, so the `installed` flag auto-resets between files.
+installFailureDiagnostics();
