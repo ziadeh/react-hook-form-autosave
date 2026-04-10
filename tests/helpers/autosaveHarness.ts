@@ -1,21 +1,13 @@
 /**
- * mountAutosaveHarness — the opinionated test harness for the undo/redo
- * reliability milestone. Single entry point used by every Phases 2–7 matrix
- * test to drive `useRhfAutosave` deterministically.
- *
- * Responsibilities:
- *   - Mount the hook via `renderHook` with a default `createControllableTransport`
- *     or a caller-supplied transport (Phase 7).
- *   - Wrap every change/undo/redo/save/abort/hydrate call in `act()` so matrix
- *     tests never import `act` themselves.
- *   - Intercept `console.*` for the harness lifetime and capture library log
- *     lines (`[autosave:xxx]` prefix) into an in-memory `LogEntry[]` buffer;
- *     `failureDiagnostics.ts` dumps them to stderr on failure — zero opt-in.
- *   - Expose timing helpers that cooperate with Jest fake timers.
- *   - Expose history inspection without touching `Patch` internals (D-15/D-16).
- *
- * Dev-only: lives under `tests/helpers/`, never bundled. Public surface is
- * locked by CONTEXT.md D-06 — any shape change is a test-only contract break.
+ * mountAutosaveHarness — single entry point for every Phases 2–7 matrix test
+ * driving `useRhfAutosave` deterministically. Mounts the hook via renderHook
+ * with a default createControllableTransport (or a caller-supplied transport
+ * for Phase 7), wraps every change/undo/redo/save/abort/hydrate call in act(),
+ * intercepts console.* to capture `[autosave:xxx]` log lines for failure dump
+ * (failureDiagnostics.ts), exposes fake-timer-aware timing helpers, and walks
+ * canUndo/canRedo for history inspection without touching Patch internals
+ * (D-15/D-16). Dev-only: under tests/helpers/, never bundled. Public surface
+ * locked by CONTEXT.md D-06.
  */
 
 import {
@@ -66,16 +58,10 @@ export interface HarnessOptions<T extends FieldValues> {
   config?: { debounceMs?: number; debug?: boolean };
   undo?: { enabled?: boolean; hotkeys?: boolean; ignoreHistoryOps?: boolean };
   validateBeforeSave?: "none" | "payload" | "all";
-  /**
-   * Enable `useRhfAutosave`'s built-in auto-hydration detection. Defaults to
-   * `false` in the harness because the auto-hydration effect in
-   * `useAutosaveEffects` clears undo/redo history whenever the form becomes
-   * clean — which happens every time an `undo()` returns the form to its
-   * baseline values. Matrix tests that need to exercise hydration drive it
-   * explicitly via `harness.hydrate(values)` (CONTEXT.md D-06). Tests that
-   * specifically want to cover the auto-hydration path (HYD-01..04) can
-   * opt in by passing `autoHydrate: true`.
-   */
+  // Defaults to false: auto-hydration in useAutosaveEffects clears undo/redo
+  // history whenever the form goes clean, which happens on every undo() that
+  // returns to baseline. Matrix tests drive hydration via harness.hydrate();
+  // HYD-01..04 can opt in to the auto path.
   autoHydrate?: boolean;
 }
 
@@ -228,11 +214,7 @@ export function mountAutosaveHarness<T extends FieldValues>(
   ) as typeof console.error;
 
   // -------- 3. Mount the hook --------
-  // Default autoHydrate to false: the hydration-detection effect in
-  // useAutosaveEffects treats any transition to a clean form with changed
-  // values as a hydration, which clears redo history the moment an undo()
-  // returns to baseline. Matrix tests drive hydration explicitly via
-  // harness.hydrate(). Tests that need the auto-hydration path opt in.
+  // See HarnessOptions.autoHydrate for the rationale (load-bearing default).
   const autoHydrate = opts.autoHydrate ?? false;
   const renderResult: RenderHookResult<HarnessRenderValue<T>, unknown> =
     renderHook<HarnessRenderValue<T>, unknown>(() => {
