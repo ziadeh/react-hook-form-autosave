@@ -22,6 +22,9 @@ coverage/
 .planning/
 .grepai/
 .claude/
+!.claude/skills/
+!.claude/skills/rhf-autosave/
+!.claude/skills/rhf-autosave/**
 .claude-flow/
 .swarm/
 .mcp.json
