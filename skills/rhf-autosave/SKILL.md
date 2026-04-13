@@ -1,6 +1,20 @@
 ---
 name: rhf-autosave
 description: Use when building forms with react-hook-form that need autosave, debounced saving, undo/redo, server hydration, or dirty-field diffing. Use when integrating react-hook-form-autosave into a project or troubleshooting autosave behavior.
+trigger:
+  - "useRhfAutosave"
+  - "react-hook-form-autosave"
+  - "autosave"
+  - "fetchTransport"
+  - "serverActionTransport"
+  - "trpcTransport"
+  - "useBeforeUnload"
+files:
+  - "src/**/*.tsx"
+  - "src/**/*.ts"
+  - "app/**/*.tsx"
+  - "pages/**/*.tsx"
+  - "components/**/*.tsx"
 ---
 
 # react-hook-form-autosave
@@ -28,26 +42,24 @@ const { isSaving, hasPendingChanges } = useRhfAutosave({
 });
 ```
 
-That's it. Every dirty-field change is debounced and sent as a PATCH with only changed keys.
-
 ## Core Concepts
+
+The library is built around three pillars: a pluggable **Transport** layer for saving, a **Validation** strategy that gates saves, and a **Baseline** tracker that diffs dirty fields against the last-known server state.
 
 ### Transport
 
-A transport is a function: `(payload, ctx?) => Promise<{ ok: true } | { ok: false, error: Error }>`.
+A transport is `(payload, ctx?) => Promise<{ ok: true } | { ok: false, error: Error }>`.
 
-Three built-in transports:
-
-| Transport | Use case | Example |
-|-----------|----------|---------|
-| `fetchTransport(url, opts?)` | REST API | `fetchTransport("/api/save", { method: "PATCH" })` |
-| `serverActionTransport(action, opts?)` | Next.js Server Actions | `serverActionTransport(saveProfile)` |
-| `trpcTransport(mutation)` | tRPC | `trpcTransport(trpc.profile.save)` |
+| Transport | Use case |
+|-----------|----------|
+| `fetchTransport(url, opts?)` | REST API |
+| `serverActionTransport(action, opts?)` | Next.js Server Actions |
+| `trpcTransport(mutation)` | tRPC |
 
 Custom transport:
 
 ```ts
-const myTransport: Transport = async (payload, ctx) => {
+const myTransport: Transport = async (payload) => {
   try {
     await myApi.save(payload);
     return { ok: true };
@@ -57,99 +69,32 @@ const myTransport: Transport = async (payload, ctx) => {
 };
 ```
 
-### Retry
+Wrap any transport with retry: `withRetry(transport, { maxRetries: 3, baseDelayMs: 1000 })`.
 
-Wrap any transport with exponential backoff:
+### Validation
 
-```ts
-import { withRetry } from "react-hook-form-autosave";
+Control via `validateBeforeSave`: `"payload"` (default, changed fields only), `"all"` (full form), or `"none"` (skip).
 
-const transport = withRetry(
-  fetchTransport("/api/save"),
-  { maxRetries: 3, baseDelayMs: 1000 }
-);
-```
-
-### Validation Before Save
-
-Control when validation runs via `validateBeforeSave`:
-
-| Value | Behavior |
-|-------|----------|
-| `"payload"` (default) | Validate only changed fields before saving |
-| `"all"` | Validate entire form before saving |
-| `"none"` | Skip validation, always save |
-
-### Key Mapping
-
-Rename fields before they hit the transport (e.g., camelCase to snake_case):
+### Key Mapping & Payload Transform
 
 ```ts
-useRhfAutosave({
-  form,
-  transport,
-  keyMap: { fullName: "full_name", emailAddress: "email_address" },
-});
-// payload sent: { full_name: "...", email_address: "..." }
-```
+// Rename keys (camelCase → snake_case)
+keyMap: { fullName: "full_name" }
 
-### Payload Transformation
+// Transform entire payload
+mapPayload: (payload) => ({ data: payload, updatedAt: Date.now() })
 
-For more control, use `mapPayload` to transform the entire payload:
-
-```ts
-useRhfAutosave({
-  form,
-  transport,
-  mapPayload: (payload) => ({ data: payload, updatedAt: Date.now() }),
-});
-```
-
-Or use `selectPayload` to control which fields are included:
-
-```ts
-useRhfAutosave({
-  form,
-  transport,
-  selectPayload: (values, dirtyFields) => {
-    // Only send specific fields
-    return { name: values.name };
-  },
-});
-```
-
-## Diff Map (Array Diffing)
-
-For array fields like tags or skills, `diffMap` calls discrete add/remove handlers instead of sending the whole array:
-
-```ts
-useRhfAutosave({
-  form,
-  transport,
-  diffMap: {
-    skills: {
-      idOf: (item) => item.id,
-      onAdd: async (item) => { await api.addSkill(item); },
-      onRemove: async (item) => { await api.removeSkill(item.id); },
-    },
-  },
-});
+// Select specific fields
+selectPayload: (values, dirtyFields) => ({ name: values.name })
 ```
 
 ## Undo / Redo
-
-Enable with the `undo` option. Keyboard shortcuts (Cmd/Ctrl+Z) are on by default:
 
 ```ts
 const { undo, redo, canUndo, canRedo, undoLastSave } = useRhfAutosave({
   form,
   transport,
-  undo: {
-    enabled: true,
-    hotkeys: true,           // Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z (default: true)
-    captureInInputs: false,  // Don't intercept inside inputs (default: false)
-    ignoreHistoryOps: false, // Auto-save after undo/redo (default: false)
-  },
+  undo: { enabled: true, hotkeys: true },
 });
 ```
 
@@ -157,52 +102,51 @@ const { undo, redo, canUndo, canRedo, undoLastSave } = useRhfAutosave({
 
 ## Server Hydration
 
-When the server pushes new data (e.g., real-time sync), use `hydrateFromServer` to update the form without triggering a save:
+Update form from server without triggering a save:
 
 ```ts
 const { hydrateFromServer } = useRhfAutosave({ form, transport });
-
-// When server data arrives:
 hydrateFromServer(newServerData);
 ```
 
-Auto-hydration is on by default (`autoHydrate: true`). It detects when `form.reset()` is called with new data and automatically updates the baseline. Set `autoHydrate: false` to handle hydration manually.
+`autoHydrate: true` (default) detects `form.reset()` calls and updates the baseline automatically.
+
+## Diff Map (Array Diffing)
+
+Calls discrete add/remove handlers for array fields instead of sending the whole array:
+
+```ts
+diffMap: {
+  skills: {
+    idOf: (item) => item.id,
+    onAdd: async (item) => { await api.addSkill(item); },
+    onRemove: async (item) => { await api.removeSkill(item.id); },
+  },
+}
+```
 
 ## Status & Lifecycle
 
+Returns: `isSaving`, `hasPendingChanges`, `lastError`, `flush()`, `forceSave()`, `abort()`.
+
+Callbacks: `onStatusChange(status)` where state is `'idle' | 'saving' | 'saved' | 'error'`, and `onSaved(result, payload)`.
+
+Prevent tab close: `useBeforeUnload(hasPendingChanges)`.
+
+## Common Patterns
+
+Recipes for the most frequent integration scenarios.
+
+**shouldSave gate** — prevent saves conditionally:
+
 ```ts
-const {
-  isSaving,          // boolean - save in flight
-  hasPendingChanges, // boolean - unsaved dirty fields exist
-  lastError,         // Error | null
-  flush,             // () => Promise - force immediate save
-  forceSave,         // () => Promise - same as flush
-  abort,             // () => void - cancel in-flight save
-} = useRhfAutosave({ form, transport });
+shouldSave: ({ isDirty, isValid, values }) => isDirty && isValid && values.name.length > 0
 ```
 
-### Status Change Callback
+**Server Action (Next.js):**
 
 ```ts
-useRhfAutosave({
-  form,
-  transport,
-  onStatusChange: (status) => {
-    // status.state: 'idle' | 'saving' | 'saved' | 'error'
-    if (status.state === "error") console.error(status.error);
-  },
-  onSaved: (result, payload) => {
-    // Called after each successful save with the result and sent payload
-  },
-});
-```
-
-### Prevent Tab Close
-
-```ts
-import { useBeforeUnload } from "react-hook-form-autosave";
-
-useBeforeUnload(hasPendingChanges);
+transport: serverActionTransport(saveProfile)
 ```
 
 ## Quick Reference
@@ -211,81 +155,24 @@ useBeforeUnload(hasPendingChanges);
 |--------|------|---------|-------------|
 | `form` | `UseFormReturn` | required | react-hook-form instance |
 | `transport` | `Transport` | required | Save function |
-| `config.debounceMs` | `number` | `600` | Debounce delay in ms |
+| `config.debounceMs` | `number` | `600` | Debounce delay |
 | `validateBeforeSave` | `"payload" \| "all" \| "none"` | `"payload"` | Validation strategy |
-| `keyMap` | `Record<string, string>` | - | Rename keys in payload |
-| `mapPayload` | `(payload) => payload` | - | Transform entire payload |
-| `selectPayload` | `(values, dirtyFields) => Partial<T>` | - | Custom field selection |
-| `shouldSave` | `(ctx) => boolean` | - | Gate saves on custom logic |
-| `diffMap` | `Record<string, DiffHandler>` | - | Array field add/remove diffing |
-| `undo` | `UndoOptions` | - | Enable undo/redo with history |
-| `autoHydrate` | `boolean` | `true` | Auto-detect form.reset() as hydration |
-| `onSaved` | `(result, payload) => void` | - | Callback after successful save |
-| `onStatusChange` | `(status) => void` | - | Status transition callback |
-
-## Common Patterns
-
-### shouldSave Gate
-
-Prevent saves when form is in a specific state:
-
-```ts
-shouldSave: ({ isDirty, isValid, values }) => {
-  return isDirty && isValid && values.name.length > 0;
-},
-```
-
-### Server Action (Next.js App Router)
-
-```tsx
-import { serverActionTransport } from "react-hook-form-autosave";
-import { saveProfile } from "./actions";
-
-useRhfAutosave({
-  form,
-  transport: serverActionTransport(saveProfile),
-});
-```
-
-### Full Example with All Features
-
-```tsx
-const form = useForm({ defaultValues: initialData, mode: "onChange" });
-
-const transport = withRetry(
-  fetchTransport(`/api/profiles/${id}`, { method: "PATCH" }),
-  { maxRetries: 2 }
-);
-
-const {
-  isSaving, hasPendingChanges, lastError,
-  undo, redo, canUndo, canRedo,
-  hydrateFromServer, flush,
-} = useRhfAutosave({
-  form,
-  transport,
-  config: { debounceMs: 600 },
-  validateBeforeSave: "payload",
-  keyMap: { fullName: "full_name" },
-  undo: { enabled: true },
-  diffMap: {
-    tags: { idOf: (t) => t.id, onAdd: addTag, onRemove: removeTag },
-  },
-  onStatusChange: (s) => {
-    if (s.state === "error") toast.error(s.error.message);
-    if (s.state === "saved") toast.success("Saved");
-  },
-});
-
-useBeforeUnload(hasPendingChanges);
-```
+| `keyMap` | `Record<string, string>` | - | Rename payload keys |
+| `mapPayload` | `(payload) => payload` | - | Transform payload |
+| `selectPayload` | `(values, dirty) => Partial<T>` | - | Custom field selection |
+| `shouldSave` | `(ctx) => boolean` | - | Gate saves |
+| `diffMap` | `Record<string, DiffHandler>` | - | Array diffing |
+| `undo` | `UndoOptions` | - | Undo/redo with history |
+| `autoHydrate` | `boolean` | `true` | Auto-detect form.reset() |
+| `onSaved` | `(result, payload) => void` | - | Post-save callback |
+| `onStatusChange` | `(status) => void` | - | Status callback |
 
 ## Common Mistakes
 
 | Mistake | Fix |
 |---------|-----|
-| Form not in `mode: "onChange"` | Set `mode: "onChange"` on `useForm()` so `dirtyFields` updates on every keystroke |
-| Transport doesn't return `{ ok: true/false }` | Every transport must return a `SaveResult` object |
-| Calling `form.reset()` and getting double saves | Use `hydrateFromServer()` instead, or set `autoHydrate: true` (default) |
-| Undo not working | Ensure `undo: { enabled: true }` and form has `mode: "onChange"` |
-| `keyMap` not applying | `keyMap` only renames top-level keys. For nested transforms use `mapPayload` |
+| Missing `mode: "onChange"` | Required on `useForm()` for dirty field tracking |
+| Transport missing `{ ok }` return | Must return `{ ok: true }` or `{ ok: false, error }` |
+| Double saves on `form.reset()` | Use `hydrateFromServer()` or `autoHydrate: true` |
+| Undo not working | Set `undo: { enabled: true }` and `mode: "onChange"` |
+| `keyMap` ignores nested keys | Use `mapPayload` for nested transforms |
