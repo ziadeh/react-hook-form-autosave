@@ -2,6 +2,15 @@
 
 All notable changes to **react-hook-form-autosave** will be documented here.
 
+## [3.3.2] - 2026-06-15
+
+### Bug Fixes
+
+- **`hasPendingChanges` defaulted to `true` on mount** — Plain forms (without `undo`/`diffMap`) reported pending changes before any edit because the fallback comparison ran against an uninitialized baseline. It now reflects React Hook Form's dirty state, so it starts `false` and only becomes `true` after a real change. ([#10](https://github.com/ziadeh/react-hook-form-autosave/issues/10))
+- **`hasPendingChanges` stuck `true` after a save** — The debounce timer ref was never cleared when the timer fired, so a settled save still looked like an active debounce. The ref is now cleared when the timer runs.
+- **`hasPendingChanges` stuck `true` on multi-field plain forms** — After saving a subset of fields, the post-save snapshot was rebuilt from the saved payload alone; it now falls back to the full pre-save form state so unchanged fields aren't treated as pending.
+- **Autosave loop with nested fields** — Partial nested payloads (e.g. `{ profile: { firstName } }`) were shallow-merged onto the baseline, clobbering sibling fields and re-dirtying the section on every save. The baseline and post-save snapshot now deep-merge the saved payload (arrays replaced), so nested autosave settles after a single save.
+
 ## [3.3.1] - 2026-04-06
 
 ### Bug Fixes

@@ -85,6 +85,7 @@ export function useRhfAutosave<T extends FieldValues>(
     manager,
     baseline.equalsBaseline,
     ignoreHistoryOps,
+    baseline.isBaselineInitializedRef,
     config.debug
   );
 

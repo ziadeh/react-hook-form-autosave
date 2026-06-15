@@ -4,6 +4,7 @@ import type { FormSubset } from "../../../strategies/validation/types";
 import type { SavePayload } from "../../../core/types";
 import type { DiffHandler } from "../utils/types";
 import { deepEqual } from "../utils/diff";
+import { deepMerge } from "../../../utils/deepMerge";
 import { createLogger } from "../../../utils/logger";
 
 export function useBaseline<T extends FieldValues>(
@@ -40,12 +41,13 @@ export function useBaseline<T extends FieldValues>(
   const updateBaseline = useCallback(
     (payload: SavePayload): void => {
       if (!baselineRef.current) return;
-      const nextBaseline = { ...baselineRef.current };
-      for (const k of Object.keys(payload)) {
-        (nextBaseline as any)[k] = (payload as any)[k];
-      }
-      baselineRef.current = nextBaseline;
-      logger.debug("Baseline updated after success", nextBaseline);
+      // Deep-merge so partial nested payloads keep their siblings; arrays are
+      // replaced. A shallow merge would clobber e.g. the whole `profile`
+      // object with just its changed leaf, corrupting later baseline diffs.
+      baselineRef.current = deepMerge(baselineRef.current, payload, {
+        arrayMergeStrategy: "replace",
+      });
+      logger.debug("Baseline updated after success", baselineRef.current);
     },
     [logger]
   );

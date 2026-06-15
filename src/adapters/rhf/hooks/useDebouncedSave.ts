@@ -86,6 +86,12 @@ export function useDebouncedSave<T extends FieldValues>({
       clearDebounceTimeout();
 
       const timeoutId = setTimeout(async () => {
+        // The debounce has elapsed: this timer has fired and is no longer
+        // "pending". Null the ref now so hasPendingChanges does not report a
+        // stale active debounce timer after the save settles. Without this the
+        // flag stays true forever once a debounced save completes.
+        // (clearTimeout on an already-fired timer is a harmless no-op.)
+        clearDebounceTimeout();
         try {
           // Build the payload right here, not earlier
           let payloadToSave: SavePayload;

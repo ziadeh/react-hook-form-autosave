@@ -7,6 +7,7 @@ import type {
 import type { DiffHandler } from "./types";
 import { mapKeys, type KeyMap } from "../../../utils/mapKeys";
 import { datesToIso } from "./transforms";
+import { deepMerge } from "../../../utils/deepMerge";
 import type { Logger } from "../../../utils/logger";
 
 interface ComposeTransportParams {
@@ -55,6 +56,15 @@ export function createComposedTransport({
   return async (payload: SavePayload, ctx?: SaveContext) => {
     const start = performance.now();
     dispatch?.({ type: "SAVE_START" });
+
+    // Snapshot the full form state BEFORE any await. For plain forms (no
+    // diffMap / undo) there is no tracked baseline, so this is the only record
+    // of the pre-save server state. It is captured pre-await on purpose so that
+    // edits made while the save is in flight are NOT included here and stay
+    // dirty. Used as the snapshot base when no baseline exists.
+    const preSaveValues: Record<string, any> = form
+      ? { ...form.getValues() }
+      : {};
 
     try {
       const remainingPayload = { ...payload };
@@ -376,12 +386,23 @@ export function createComposedTransport({
           // Build the confirmed-saved snapshot by merging saved payload
           // onto the previous baseline. Do NOT use currentValues — the user
           // may have typed while the save was in flight, and those mid-save
-          // edits must stay dirty.
-          const previousBaseline = baselineRef?.current ?? {};
-          const savedSnapshot: Record<string, any> = { ...previousBaseline };
-          for (const k of Object.keys(successfulPayload)) {
-            savedSnapshot[k] = (successfulPayload as any)[k];
-          }
+          // edits must stay dirty. When no baseline is tracked (plain forms),
+          // fall back to the pre-save snapshot so the snapshot still contains
+          // EVERY field — otherwise unsaved-but-unchanged fields look "missing"
+          // and get spuriously re-dirtied, leaving hasPendingChanges stuck true.
+          const previousBaseline = baselineRef?.current ?? preSaveValues;
+          // Deep-merge the saved payload onto the baseline so PARTIAL nested
+          // payloads (e.g. { profile: { firstName } } from pickChanged) keep
+          // their unsaved siblings instead of clobbering the whole object.
+          // A shallow merge would replace `profile` with just `{ firstName }`,
+          // and the re-dirty pass below would then re-dirty the section every
+          // save — an autosave loop. Arrays are replaced wholesale (the payload
+          // carries the full array).
+          const savedSnapshot: Record<string, any> = deepMerge(
+            previousBaseline,
+            successfulPayload,
+            { arrayMergeStrategy: "replace" }
+          );
 
           // Update last saved state with only what was actually saved
           if (updateLastSavedState) {

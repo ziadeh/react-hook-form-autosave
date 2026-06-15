@@ -1,9 +1,20 @@
+"use client";
+
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import type { useFormData } from "@/hooks/useFormData";
-import React, { useState, useEffect } from "react";
 
+type Metrics = {
+  totalSaves?: number;
+  failedSaves?: number;
+  averageSaveTime?: number;
+};
+
+/**
+ * Status bar: live autosave status, undo/redo, manual flush, and metrics.
+ * Metrics are read on render (no polling interval) so there is no console noise.
+ */
 export function DemoHeader({
   autosave,
 }: {
@@ -17,180 +28,96 @@ export function DemoHeader({
     canRedo,
     hasPendingChanges,
     isSaving,
+    lastError,
     getMetrics,
-    getBaseline,
   } = autosave;
 
-  const [metrics, setMetrics] = useState<{ totalSaves?: number; failedSaves?: number; averageSaveTime?: number } | null>(null);
-  const [showDebug, setShowDebug] = useState(false);
+  const metrics = (getMetrics?.() ?? {}) as Metrics;
 
-  // Update metrics every second
-  useEffect(() => {
-    if (getMetrics) {
-      const interval = setInterval(() => {
-        const currentMetrics = getMetrics() as { totalSaves?: number; failedSaves?: number; averageSaveTime?: number };
-        setMetrics({
-          totalSaves: currentMetrics.totalSaves,
-          failedSaves: currentMetrics.failedSaves,
-          averageSaveTime: currentMetrics.averageSaveTime,
-        });
-      }, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [getMetrics]);
+  const status = isSaving
+    ? { label: "Saving…", cls: "bg-blue-500/15 text-blue-400", dot: "⟳" }
+    : lastError
+      ? { label: "Save failed", cls: "bg-red-500/15 text-red-400", dot: "✕" }
+      : hasPendingChanges
+        ? {
+            label: "Unsaved changes",
+            cls: "bg-amber-500/15 text-amber-400",
+            dot: "✏️",
+          }
+        : {
+            label: "All changes saved",
+            cls: "bg-green-500/15 text-green-400",
+            dot: "✓",
+          };
 
   return (
-    <div className="w-full space-y-4">
-      {/* Controls Bar */}
-      <Card className="border-2 border-primary/20 bg-card/50 backdrop-blur-sm">
-        <CardContent className="p-4">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" onClick={undo} disabled={!canUndo} variant="outline" size="sm">
-                <span className="text-lg mr-1">↶</span> Undo
-              </Button>
-              <Button type="button" onClick={redo} disabled={!canRedo} variant="outline" size="sm">
-                <span className="text-lg mr-1">↷</span> Redo
-              </Button>
-              <Button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  void flush();
-                }}
-                disabled={!hasPendingChanges || isSaving}
-                size="sm"
-              >
-                {isSaving ? "💾 Saving..." : "💾 Save Now"}
-              </Button>
-            </div>
+    <Card className="border-primary/20 bg-card/60 sticky top-4 z-10 backdrop-blur-md">
+      <CardContent className="flex flex-col gap-3 px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span
+            data-testid="autosave-status"
+            data-pending={String(hasPendingChanges)}
+            data-saving={String(isSaving)}
+            className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-semibold ${status.cls}`}
+          >
+            <span aria-hidden>{status.dot}</span>
+            {status.label}
+          </span>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge
-                variant={isSaving ? "default" : "secondary"}
-                className="text-xs"
-              >
-                {isSaving ? "💾 Saving..." : "💤 Idle"}
-              </Badge>
-              <Badge
-                variant={hasPendingChanges ? "destructive" : "default"}
-                className="text-xs"
-              >
-                {hasPendingChanges ? "✏️ Unsaved" : "✅ Saved"}
-              </Badge>
-              <Button
-                type="button"
-                onClick={() => setShowDebug(!showDebug)}
-                variant="ghost"
-                size="sm"
-                className="text-xs"
-              >
-                {showDebug ? "▼ Hide" : "▶ Show"} Debug
-              </Button>
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              data-testid="undo-btn"
+              onClick={() => undo?.()}
+              disabled={!canUndo}
+              variant="outline"
+              size="sm"
+            >
+              ↶ Undo
+            </Button>
+            <Button
+              type="button"
+              data-testid="redo-btn"
+              onClick={() => redo?.()}
+              disabled={!canRedo}
+              variant="outline"
+              size="sm"
+            >
+              ↷ Redo
+            </Button>
+            <Button
+              type="button"
+              data-testid="save-now-btn"
+              onClick={(e) => {
+                e.preventDefault();
+                void flush();
+              }}
+              disabled={!hasPendingChanges || isSaving}
+              size="sm"
+            >
+              {isSaving ? "Saving…" : "Save now"}
+            </Button>
           </div>
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Debug Panel */}
-      {showDebug && (
-        <Card className="border-2 border-muted bg-card/80 backdrop-blur-sm">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <span className="text-primary">🔧</span> Debug & Metrics
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Real-time autosave information and performance metrics
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Status */}
-            <div className="rounded-lg border border-border/50 bg-muted/30 p-4">
-              <p className="mb-3 text-sm font-semibold text-foreground">Status Indicators</p>
-              <div className="flex flex-wrap gap-2">
-                <Badge variant={canUndo ? "default" : "secondary"} className="text-xs">
-                  Can Undo: {canUndo ? "✓" : "✗"}
-                </Badge>
-                <Badge variant={canRedo ? "default" : "secondary"} className="text-xs">
-                  Can Redo: {canRedo ? "✓" : "✗"}
-                </Badge>
-                <Badge variant={hasPendingChanges ? "destructive" : "secondary"} className="text-xs">
-                  Pending: {hasPendingChanges ? "✓" : "✗"}
-                </Badge>
-                <Badge variant={isSaving ? "default" : "secondary"} className="text-xs">
-                  Saving: {isSaving ? "✓" : "✗"}
-                </Badge>
-              </div>
-            </div>
-
-            {/* Metrics */}
-            {metrics && (
-              <div className="rounded-lg border border-border/50 bg-muted/30 p-4">
-                <p className="mb-3 text-sm font-semibold text-foreground">
-                  📊 Metrics (enableMetrics: true)
-                </p>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="text-center">
-                    <p className="text-xs text-muted-foreground mb-1">Total Saves</p>
-                    <p className="text-2xl font-bold text-primary">{metrics.totalSaves ?? 0}</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-xs text-muted-foreground mb-1">Failed Saves</p>
-                    <p className="text-2xl font-bold text-destructive">{metrics.failedSaves ?? 0}</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-xs text-muted-foreground mb-1">Avg Save Time</p>
-                    <p className="text-2xl font-bold text-primary">
-                      {metrics.averageSaveTime ? `${metrics.averageSaveTime.toFixed(0)}ms` : "N/A"}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Features */}
-            <div className="rounded-lg border border-border/50 bg-muted/30 p-4">
-              <p className="mb-3 text-sm font-semibold text-foreground">⚡ Active Features</p>
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="outline" className="text-xs">autoHydrate</Badge>
-                <Badge variant="outline" className="text-xs">undo/redo</Badge>
-                <Badge variant="outline" className="text-xs">shouldSave</Badge>
-                <Badge variant="outline" className="text-xs">validateBeforeSave</Badge>
-                <Badge variant="outline" className="text-xs">onSaved</Badge>
-                <Badge variant="outline" className="text-xs">debug mode</Badge>
-                <Badge variant="outline" className="text-xs">enableMetrics</Badge>
-              </div>
-              <p className="mt-3 mb-2 text-sm font-semibold text-foreground">🎯 Nested Field Features</p>
-              <div className="flex flex-wrap gap-2">
-                <Badge variant="default" className="text-xs bg-green-600">mapNestedKeys</Badge>
-                <Badge variant="default" className="text-xs bg-green-600">detectNestedArrayChanges</Badge>
-                <Badge variant="default" className="text-xs bg-green-600">findArrayFields</Badge>
-                <Badge variant="default" className="text-xs bg-green-600">getByPath</Badge>
-                <Badge variant="default" className="text-xs bg-green-600">custom selectPayload</Badge>
-              </div>
-            </div>
-
-            {/* Baseline Debug */}
-            {getBaseline && (
-              <div className="flex justify-center">
-                <Button
-                  type="button"
-                  onClick={() => {
-                    const baseline = getBaseline();
-                    console.log("🔍 Current Baseline:", baseline);
-                    console.log("🔍 Form Values:", autosave);
-                  }}
-                  variant="outline"
-                  size="sm"
-                  className="text-xs"
-                >
-                  🔍 Log Baseline to Console
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-    </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <Badge variant="secondary" data-testid="metric-total">
+            Saves: {metrics.totalSaves ?? 0}
+          </Badge>
+          <Badge variant="secondary" data-testid="metric-failed">
+            Failed: {metrics.failedSaves ?? 0}
+          </Badge>
+          <Badge variant="secondary">
+            Avg:{" "}
+            {metrics.averageSaveTime
+              ? `${Math.round(metrics.averageSaveTime)}ms`
+              : "—"}
+          </Badge>
+          <span className="text-muted-foreground ml-auto hidden sm:inline">
+            ⌘/Ctrl+Z undo · Shift+⌘/Ctrl+Z redo
+          </span>
+        </div>
+      </CardContent>
+    </Card>
   );
 }

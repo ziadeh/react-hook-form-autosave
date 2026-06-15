@@ -1,266 +1,136 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  type Transport,
-  type SaveContext,
+  type SavePayload,
   useRhfAutosave,
-  mapNestedKeys,
-  detectNestedArrayChanges,
+  pickChanged,
 } from "react-hook-form-autosave";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 
-import {
-  FormDataSchema,
-  type FormData,
-  type formOptions,
-} from "@/types/formData.type";
+import { FormDataSchema, type FormData } from "@/types/formData.type";
 import { DefaultFormValues } from "@/utils/formData.utils";
 import { api } from "@/trpc/react";
 
 const userId = "123";
+
+export type SaveLogEntry = {
+  id: number;
+  at: string;
+  keys: string[];
+  ok: boolean;
+};
+
+/**
+ * Clean payload selection for a mixed nested/array form:
+ *  - nested objects (profile/address/socialLinks/settings) → only changed leaves
+ *    (via the library's `pickChanged`)
+ *  - arrays (teamMembers)                                  → the whole array,
+ *    because per-item dirty tracking would otherwise yield a partial
+ *    `{ "0": { ... } }` object instead of a real array.
+ */
+function selectChangedPayload(
+  values: FormData,
+  dirtyFields: Record<string, unknown>,
+): Partial<FormData> {
+  const payload: SavePayload = {};
+
+  for (const key of Object.keys(dirtyFields ?? {})) {
+    const dirty = (dirtyFields as Record<string, unknown>)[key];
+    const value = (values as Record<string, unknown>)[key];
+
+    if (Array.isArray(value)) {
+      payload[key] = value;
+    } else if (dirty === true) {
+      payload[key] = value;
+    } else if (dirty && typeof dirty === "object") {
+      const nested = pickChanged(
+        (value ?? {}) as Record<string, unknown>,
+        dirty,
+      );
+      if (Object.keys(nested).length > 0) payload[key] = nested;
+    }
+  }
+
+  return payload as Partial<FormData>;
+}
+
 export const useFormData = () => {
   const form = useForm<FormData>({
     defaultValues: DefaultFormValues(),
     resolver: zodResolver(FormDataSchema),
     mode: "onChange",
-    // Prevent validation during render
-    criteriaMode: "firstError",
-    reValidateMode: "onChange",
   });
 
-  const { data: sampleFormData, isLoading } = api.sample.getData.useQuery(
+  const { data, isLoading } = api.sample.getData.useQuery(
     { id: userId },
-    {
-      staleTime: 60 * 1000,
-      refetchOnWindowFocus: false,
-    },
+    { staleTime: 60_000, refetchOnWindowFocus: false },
   );
+  const { mutateAsync } = api.sample.updateForm.useMutation();
 
-  const { data: skillsOptions } = api.sample.getSkillsOptions.useQuery();
-  const updateMutation = api.sample.updateForm.useMutation();
-  const { mutateAsync: addSkill } = api.sample.addSkill.useMutation();
-
-  // Store baseline for array diffing
-  const baselineRef = useRef<FormData | null>(null);
-  
-  // Update baseline when form is reset/loaded
+  // Hydrate the form from the server exactly once. The autosave hook detects
+  // the reset (autoHydrate) and snapshots it as the baseline.
+  const hydratedRef = useRef(false);
   useEffect(() => {
-    if (sampleFormData && !isLoading) {
-      baselineRef.current = sampleFormData;
+    if (data && !hydratedRef.current) {
+      hydratedRef.current = true;
+      form.reset(data);
     }
-  }, [sampleFormData, isLoading]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
 
-  // Create stable transport function with nested field support
-  const transport: Transport = useCallback(
-    async (payload: Record<string, unknown>, _ctx?: SaveContext) => {
-      // If payload is empty, just return success without making API call
-      if (!payload || Object.keys(payload).length === 0) {
-        return { ok: true };
-      }
+  // Visible save log — proves the API actually fires on autosave.
+  const [saveLog, setSaveLog] = useState<SaveLogEntry[]>([]);
+  const logCounter = useRef(0);
+  const pushLog = useCallback((keys: string[], ok: boolean) => {
+    logCounter.current += 1;
+    const entry: SaveLogEntry = {
+      id: logCounter.current,
+      at: new Date().toLocaleTimeString(),
+      keys,
+      ok,
+    };
+    setSaveLog((prev) => [entry, ...prev].slice(0, 25));
+  }, []);
+  const clearSaveLog = useCallback(() => setSaveLog([]), []);
 
+  // Real tRPC transport, wrapped to record each save in the log.
+  const transport = useCallback(
+    async (payload: SavePayload) => {
+      const keys = Object.keys(payload);
       try {
-        // Transform nested form fields to match API structure
-        const keyMapConfig = {
-          'profile.firstName': 'first_name',
-          'profile.lastName': 'last_name', 
-          'profile.email': 'email_address',
-          'profile.bio': 'biography',
-          'address.zipCode': 'postal_code',
-          'address.street': 'street_address',
-          'socialLinks.github': 'github_url',
-          'socialLinks.linkedin': 'linkedin_url',
-          'socialLinks.twitter': 'twitter_url',
-          'socialLinks.website': 'website_url',
-          'settings.notifications': 'notify_enabled',
-          'settings.newsletter': 'newsletter_subscribed',
-        };
-
-        const transformedPayload = mapNestedKeys(payload, keyMapConfig, { 
-          preserveUnmapped: true 
-        });
-
-        // Detect array changes for user feedback
-        if (payload.teamMembers && baselineRef.current?.teamMembers) {
-          const arrayChanges = detectNestedArrayChanges(
-            { teamMembers: baselineRef.current.teamMembers },
-            { teamMembers: payload.teamMembers },
-            ['teamMembers'],
-            { identityKey: 'id', trackFieldChanges: true }
-          );
-          
-          if (arrayChanges.teamMembers?.hasChanges) {
-            const { added, removed, modified } = arrayChanges.teamMembers;
-            const parts = [];
-            if (added.length > 0) parts.push(`+${added.length} added`);
-            if (removed.length > 0) parts.push(`-${removed.length} removed`);
-            if (modified.length > 0) parts.push(`${modified.length} modified`);
-            if (parts.length > 0) {
-              toast.info(`Team Members: ${parts.join(', ')}`);
-            }
-          }
-        }
-
-        // Send to API
-        await updateMutation.mutateAsync({
-          id: userId,
-          data: transformedPayload,
-        });
-        
-        // Update baseline after successful save
-        const currentValues = form.getValues();
-        baselineRef.current = currentValues;
-        
-        return { ok: true };
+        await mutateAsync({ id: userId, data: payload });
+        pushLog(keys, true);
+        return { ok: true as const };
       } catch (error) {
-        console.error("Save error:", error);
+        pushLog(keys, false);
         return {
-          ok: false,
+          ok: false as const,
           error: error instanceof Error ? error : new Error(String(error)),
         };
       }
     },
-    [updateMutation, form],
-  );
-  const shouldSave = useCallback(
-    ({
-      isDirty,
-      isValid,
-      dirtyFields,
-    }: {
-      isDirty: boolean;
-      isValid: boolean;
-      dirtyFields: Record<string, unknown>;
-      values: FormData;
-    }) => {
-      const hasDirtyFields = Object.keys(dirtyFields ?? {}).length > 0;
-      // For nested fields, check isDirty OR hasDirtyFields
-      return (isDirty || hasDirtyFields) && isValid;
-    },
-    [],
+    [mutateAsync, pushLog],
   );
 
-  // Custom selectPayload that handles nested fields and arrays
   const selectPayload = useCallback(
-    (values: FormData, dirtyFields: Record<string, unknown>) => {
-      // If no dirty fields, return empty
-      if (!dirtyFields || Object.keys(dirtyFields).length === 0) {
-        return {};
-      }
-
-      // Helper to check if any value in an object/array is truthy
-      const hasAnyDirty = (obj: unknown): boolean => {
-        if (obj === true) return true;
-        if (Array.isArray(obj)) {
-          return obj.some(item => hasAnyDirty(item));
-        }
-        if (obj && typeof obj === 'object') {
-          return Object.values(obj).some(val => hasAnyDirty(val));
-        }
-        return false;
-      };
-
-      // Custom extraction that handles arrays properly
-      const extractDirtyValues = (vals: unknown, dirty: unknown): unknown => {
-        if (dirty === undefined || dirty === null) return undefined;
-        if (vals === undefined || vals === null) return undefined;
-
-        // If dirty is exactly true, return the value
-        if (dirty === true) {
-          return vals;
-        }
-
-        // If dirty is an array (for array fields like teamMembers)
-        if (Array.isArray(dirty)) {
-          if (!Array.isArray(vals)) {
-            return undefined;
-          }
-
-          // For arrays, if ANY item is dirty, return the ENTIRE array
-          if (hasAnyDirty(dirty)) {
-            return vals;
-          }
-
-          return undefined;
-        }
-
-        // If dirty is an object, recurse into it
-        if (typeof dirty === 'object') {
-          const result: Record<string, unknown> = {};
-
-          for (const key of Object.keys(dirty)) {
-            const dirtyObj = dirty as Record<string, unknown>;
-            const valsObj = vals as Record<string, unknown>;
-            const extracted = extractDirtyValues(valsObj?.[key], dirtyObj[key]);
-            if (extracted !== undefined) {
-              result[key] = extracted;
-            }
-          }
-
-          if (Object.keys(result).length > 0) {
-            return result;
-          }
-          return undefined;
-        }
-
-        return undefined;
-      };
-
-      return extractDirtyValues(values, dirtyFields) ?? {};
-    },
+    (values: FormData, dirtyFields: Record<string, unknown>) =>
+      selectChangedPayload(values, dirtyFields),
     [],
   );
-  // Setup autosave with nested fields support
+
   const autosave = useRhfAutosave<FormData>({
     form,
     transport,
-    // Re-enable undo/redo with nested field support
-    undo: {
-      enabled: true,
-      hotkeys: true, // Cmd/Ctrl+Z to undo, Cmd/Ctrl+Shift+Z to redo
-      captureInInputs: true, // Capture undo/redo even when focused on inputs
-    },
-    config: {
-      debug: process.env.NODE_ENV === "development",
-      debounceMs: 800,
-      enableMetrics: true,
-    },
-    shouldSave,
     selectPayload,
+    undo: { enabled: true, hotkeys: true, captureInInputs: true },
     validateBeforeSave: "payload",
-    onSaved: (result: { ok: boolean; error?: Error }) => {
-      if (result.ok) {
-        toast.success("Changes saved!");
-      } else {
-        toast.error("Failed to save changes");
-      }
+    config: { debounceMs: 800 },
+    onSaved: (result: { ok: boolean }) => {
+      if (result.ok) toast.success("Saved");
+      else toast.error("Save failed");
     },
   });
 
-  useEffect(() => {
-    if (sampleFormData && !isLoading) {
-      // Use setTimeout to avoid state updates during render
-      const timer = setTimeout(() => {
-        form.reset({
-          ...sampleFormData,
-          isAnyInputFocused: false,
-        });
-      }, 0);
-
-      return () => clearTimeout(timer);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sampleFormData, isLoading]); // form is stable and doesn't need to be in deps
-
-  return {
-    form,
-    userId,
-    isLoading,
-    options: {
-      skillsOptions: skillsOptions ?? [],
-    } as formOptions,
-    sampleFormData,
-    autosave,
-    addSkill,
-  };
+  return { form, autosave, isLoading, saveLog, clearSaveLog };
 };

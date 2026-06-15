@@ -14,6 +14,7 @@ function makeHook(opts: {
   isDirty?: boolean;
   dirtyFields?: Record<string, boolean>;
   formValues?: Record<string, any>;
+  isBaselineInitialized?: boolean;
 } = {}) {
   const transport = createMockTransport();
   const manager = new AutosaveManager(transport);
@@ -24,7 +25,11 @@ function makeHook(opts: {
     isDirty = false,
     dirtyFields = {},
     formValues = { name: 'John' },
+    // Default to true so existing branch tests still exercise the baseline path
+    isBaselineInitialized = true,
   } = opts;
+
+  const isBaselineInitializedRef = { current: isBaselineInitialized };
 
   const form = createMockForm({
     formState: { isDirty, isValid: true, dirtyFields, isValidating: false } as any,
@@ -32,7 +37,7 @@ function makeHook(opts: {
   });
 
   const { result } = renderHook(() =>
-    usePendingState(form, manager, equalsBaseline, ignoreHistoryOps)
+    usePendingState(form, manager, equalsBaseline, ignoreHistoryOps, isBaselineInitializedRef)
   );
 
   return { result, manager, form, transport };
@@ -164,6 +169,32 @@ describe('usePendingState', () => {
 
       it('should return true when differs from baseline', () => {
         const { result } = makeHook({ equalsBaseline: () => false, isDirty: true, dirtyFields: { name: true } });
+        expect(result.current.computeHasPendingChanges()).toBe(true);
+      });
+    });
+
+    describe('Branch 8: no baseline initialized (issue #10)', () => {
+      // Plain forms (no diffMap, no undo) never initialize a baseline. In that
+      // case equalsBaseline() always reports "not equal", which previously made
+      // hasPendingChanges default to `true` on mount. With no baseline and a
+      // clean form, there are no pending changes.
+      it('should return false on a clean form when no baseline exists', () => {
+        const { result } = makeHook({
+          isBaselineInitialized: false,
+          equalsBaseline: () => false, // mirrors useBaseline returning false when baselineRef is null
+          isDirty: false,
+          dirtyFields: {},
+        });
+        expect(result.current.computeHasPendingChanges()).toBe(false);
+      });
+
+      it('should still return true when the form is dirty without a baseline', () => {
+        const { result } = makeHook({
+          isBaselineInitialized: false,
+          equalsBaseline: () => false,
+          isDirty: true,
+          dirtyFields: { name: true },
+        });
         expect(result.current.computeHasPendingChanges()).toBe(true);
       });
     });

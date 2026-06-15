@@ -25,6 +25,7 @@ function makeHook(opts: {
   undoEnabled?: boolean;
   ignoreHistoryOps?: boolean;
   defaultValues?: FormValues;
+  debug?: boolean;
 } = {}) {
   const {
     transport: customTransport,
@@ -35,6 +36,7 @@ function makeHook(opts: {
     undoEnabled = false,
     ignoreHistoryOps = false,
     defaultValues = { name: 'John', email: 'john@test.com' },
+    debug = false,
   } = opts;
 
   const mockTransport = createMockTransport([{ ok: true }]);
@@ -45,7 +47,7 @@ function makeHook(opts: {
     const autosave = useRhfAutosave<FormValues>({
       form,
       transport,
-      config: { debounceMs },
+      config: { debounceMs, debug },
       validateBeforeSave,
       keyMap,
       mapPayload,
@@ -81,10 +83,11 @@ describe('useRhfAutosave integration', () => {
       expect(result.current.autosave.lastError).toBeNull();
     });
 
-    it('should start with hasPendingChanges defined', () => {
+    it('should start with hasPendingChanges=false (issue #10)', () => {
       const { result } = makeHook();
-      // hasPendingChanges is a boolean (may be true initially before baseline init)
-      expect(typeof result.current.autosave.hasPendingChanges).toBe('boolean');
+      // A freshly mounted form with no user interaction has nothing pending,
+      // even without diffMap/undo (so no baseline is initialized).
+      expect(result.current.autosave.hasPendingChanges).toBe(false);
     });
 
     it('should expose flush function', () => {
@@ -219,6 +222,118 @@ describe('useRhfAutosave integration', () => {
         result.current.autosave.abort();
       });
       expect(typeof result.current.autosave.hasPendingChanges).toBe('boolean');
+    });
+
+    it('returns to false after autosave on a multi-field plain form (issue #10 stuck-true)', async () => {
+      // Plain form (no undo/diffMap), two fields. Changing ONE field means the
+      // saved payload is a subset of the form values. After the save completes,
+      // hasPendingChanges must return to false — it previously stuck at true.
+      const { result, mockTransport } = makeHook({ debounceMs: 50 });
+
+      act(() => {
+        result.current.form.setValue('name', 'Jane', { shouldDirty: true });
+      });
+
+      // Run the full debounce → save → post-save reconciliation cycle.
+      await act(async () => {
+        jest.advanceTimersByTime(100);
+        await Promise.resolve();
+        await Promise.resolve();
+        jest.advanceTimersByTime(100); // flush post-save setTimeouts
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(mockTransport.getCalls().length).toBeGreaterThan(0); // autosave fired
+      expect(result.current.autosave.hasPendingChanges).toBe(false);
+    });
+
+    it('returns to false after autosave when changing a field twice in a row', async () => {
+      // Guards the debounce-timer-ref regression: a second debounced save must
+      // also leave hasPendingChanges false once it settles.
+      const { result } = makeHook({ debounceMs: 50 });
+
+      act(() => {
+        result.current.form.setValue('name', 'First', { shouldDirty: true });
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(100);
+        await Promise.resolve();
+        await Promise.resolve();
+        jest.advanceTimersByTime(100);
+        await Promise.resolve();
+      });
+
+      act(() => {
+        result.current.form.setValue('name', 'Second', { shouldDirty: true });
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(100);
+        await Promise.resolve();
+        await Promise.resolve();
+        jest.advanceTimersByTime(100);
+        await Promise.resolve();
+      });
+
+      expect(result.current.autosave.hasPendingChanges).toBe(false);
+    });
+  });
+
+  describe('nested fields (deep-merge regression)', () => {
+    it('autosaves a partial nested payload exactly once, keeps siblings, and settles', async () => {
+      // A partial nested payload like { profile: { firstName } } must be
+      // deep-merged onto the saved snapshot. A shallow merge would drop the
+      // sibling (lastName), re-dirty the section, and loop forever.
+      const mockTransport = createMockTransport([
+        { ok: true },
+        { ok: true },
+        { ok: true },
+        { ok: true },
+      ]);
+
+      const { result } = renderHook(() => {
+        const form = useForm({
+          defaultValues: { profile: { firstName: 'John', lastName: 'Smith' } },
+        });
+        const autosave = useRhfAutosave({
+          form,
+          transport: mockTransport,
+          config: { debounceMs: 50 },
+          validateBeforeSave: 'none',
+          // Emulate pickChanged: send only the changed nested leaf.
+          selectPayload: (values: any, dirty: any) => {
+            const out: any = {};
+            if (dirty.profile && typeof dirty.profile === 'object') {
+              out.profile = {};
+              for (const k of Object.keys(dirty.profile)) {
+                out.profile[k] = values.profile[k];
+              }
+            }
+            return out;
+          },
+        });
+        return { form, autosave };
+      });
+
+      act(() => {
+        result.current.form.setValue('profile.firstName', 'Jane', {
+          shouldDirty: true,
+        });
+      });
+      await act(async () => {
+        jest.advanceTimersByTime(100);
+        await Promise.resolve();
+        await Promise.resolve();
+        jest.advanceTimersByTime(100);
+        await Promise.resolve();
+      });
+
+      // Exactly one save — no re-dirty loop.
+      expect(mockTransport.getCalls()).toHaveLength(1);
+      expect(mockTransport.getCalls()[0]).toEqual({ profile: { firstName: 'Jane' } });
+      // Sibling preserved, settled.
+      expect(result.current.form.getValues('profile.lastName')).toBe('Smith');
+      expect(result.current.autosave.hasPendingChanges).toBe(false);
     });
   });
 

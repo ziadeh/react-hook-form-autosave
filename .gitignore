@@ -30,3 +30,6 @@ coverage/
 .mcp.json
 CLAUDE.md
 docs/
+
+# Playwright MCP test artifacts
+.playwright-mcp/

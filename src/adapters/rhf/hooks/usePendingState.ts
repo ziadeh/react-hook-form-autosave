@@ -14,6 +14,7 @@ export function usePendingState<T extends FieldValues>(
   manager: AutosaveManager,
   equalsBaseline: (vals: any) => boolean,
   ignoreHistoryOps: boolean,
+  isBaselineInitializedRef: { current: boolean },
   debug?: boolean
 ) {
   const logger = createLogger("pending-state", debug);
@@ -187,7 +188,20 @@ export function usePendingState<T extends FieldValues>(
       return true;
     }
 
-    // Final check: compare current values with baseline
+    // Final check: compare current values with baseline.
+    // The baseline only exists when diffMap or undo is enabled. Without it,
+    // equalsBaseline() always reports "not equal", which would make this
+    // function default to `true` on initial mount for plain forms (issue #10).
+    // In that case RHF's dirtyFields — already checked above and empty here —
+    // is the source of truth, so there are no pending changes.
+    if (!isBaselineInitializedRef.current) {
+      logger.debug(
+        "[hasPendingChanges] No baseline initialized; dirty fields are clean - no pending changes",
+        debugInfo
+      );
+      return false;
+    }
+
     try {
       const currentValues = form.getValues();
       const baselineEqual = equalsBaseline(currentValues);

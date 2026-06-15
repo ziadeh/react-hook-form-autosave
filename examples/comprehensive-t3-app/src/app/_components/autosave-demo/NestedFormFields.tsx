@@ -270,7 +270,7 @@ export function NestedFormFields() {
             Array of nested objects: <code className="text-xs">teamMembers[0].name</code>
             <br />
             <span className="text-xs text-muted-foreground mt-1 block">
-              Changes to this array are auto-detected by <code>detectNestedArrayChanges</code>
+              Add, edit, or remove rows — the whole array is autosaved as one payload.
             </span>
           </CardDescription>
         </CardHeader>
